@@ -34,6 +34,8 @@ export default function LoginPage() {
 
     try {
       const tokens = await authApi.login(data.email, data.password)
+      // Store tokens first so getMe() has auth header
+      useAuthStore.getState().updateTokens(tokens)
       const user = await authApi.getMe()
       setAuth(user, tokens)
       navigate('/dashboard')
