@@ -1,20 +1,39 @@
 """
 Database connection and session management.
 """
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker, declarative_base
-from sqlalchemy.pool import QueuePool
+from sqlalchemy.pool import QueuePool, StaticPool
 
 from app.core.config import settings
 
-engine = create_engine(
-    settings.DATABASE_URL,
-    poolclass=QueuePool,
-    pool_size=settings.DATABASE_POOL_SIZE,
-    max_overflow=settings.DATABASE_MAX_OVERFLOW,
-    pool_pre_ping=True,  # Enable connection health checks
-    pool_recycle=3600,  # Recycle connections after 1 hour
-)
+# Detect if using SQLite
+is_sqlite = settings.DATABASE_URL.startswith("sqlite")
+
+if is_sqlite:
+    # SQLite configuration
+    engine = create_engine(
+        settings.DATABASE_URL,
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+
+    # Enable foreign keys for SQLite
+    @event.listens_for(engine, "connect")
+    def set_sqlite_pragma(dbapi_connection, connection_record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+else:
+    # PostgreSQL configuration
+    engine = create_engine(
+        settings.DATABASE_URL,
+        poolclass=QueuePool,
+        pool_size=settings.DATABASE_POOL_SIZE,
+        max_overflow=settings.DATABASE_MAX_OVERFLOW,
+        pool_pre_ping=True,
+        pool_recycle=3600,
+    )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 

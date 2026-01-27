@@ -2,7 +2,6 @@
 Authentication endpoints.
 """
 from typing import Optional
-from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
@@ -57,7 +56,7 @@ async def get_current_user(
         raise credentials_exception
 
     auth_service = AuthService(db)
-    user = auth_service.get_user_by_id(UUID(user_id))
+    user = auth_service.get_user_by_id(user_id)
 
     if not user or not user.is_active:
         raise credentials_exception

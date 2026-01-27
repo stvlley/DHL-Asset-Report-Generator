@@ -92,7 +92,7 @@ class AuthService:
             return None
 
         user_id = payload.get("sub")
-        user = self.db.query(User).filter(User.user_id == UUID(user_id)).first()
+        user = self.db.query(User).filter(User.user_id == user_id).first()
 
         if not user or not user.is_active:
             return None
@@ -127,9 +127,9 @@ class AuthService:
 
         return user, None
 
-    def get_user_by_id(self, user_id: UUID) -> Optional[User]:
+    def get_user_by_id(self, user_id: str) -> Optional[User]:
         """Get user by ID."""
-        return self.db.query(User).filter(User.user_id == user_id).first()
+        return self.db.query(User).filter(User.user_id == str(user_id)).first()
 
     def get_user_by_email(self, email: str) -> Optional[User]:
         """Get user by email."""

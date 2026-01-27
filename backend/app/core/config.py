@@ -13,8 +13,9 @@ class Settings(BaseSettings):
     API_V1_PREFIX: str = "/api/v1"
     DEBUG: bool = False
 
-    # Database
-    DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/dhl_assets"
+    # Database - defaults to SQLite for development
+    # Set DATABASE_URL=postgresql://... in .env for production
+    DATABASE_URL: str = "sqlite:///./dhl_assets.db"
     DATABASE_POOL_SIZE: int = 20
     DATABASE_MAX_OVERFLOW: int = 10
 

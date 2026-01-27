@@ -4,7 +4,6 @@ Variance and action item models for reconciliation results.
 import uuid
 from datetime import datetime, timezone
 from sqlalchemy import Column, String, DateTime, Text, Numeric, ForeignKey, Enum, Index
-from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 import enum
 
@@ -39,8 +38,8 @@ class ActionStatus(str, enum.Enum):
 class Variance(Base):
     __tablename__ = "variances"
 
-    variance_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    audit_id = Column(UUID(as_uuid=True), ForeignKey("audit_submissions.audit_id", ondelete="CASCADE"), nullable=False, index=True)
+    variance_id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    audit_id = Column(String(36), ForeignKey("audit_submissions.audit_id", ondelete="CASCADE"), nullable=False, index=True)
     serial_number = Column(String(50), nullable=True, index=True)
     variance_type = Column(Enum(VarianceType), nullable=False, index=True)
     priority = Column(Enum(PriorityLevel), nullable=False, index=True)
@@ -65,10 +64,10 @@ class Variance(Base):
     status = Column(Enum(ActionStatus), default=ActionStatus.PENDING, index=True)
     assigned_to = Column(String(100), nullable=True)
     resolution_notes = Column(Text, nullable=True)
-    resolved_at = Column(DateTime(timezone=True), nullable=True)
+    resolved_at = Column(DateTime, nullable=True)
     resolved_by = Column(String(100), nullable=True)
 
-    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     # Relationship
     audit = relationship("AuditSubmission", back_populates="variances")

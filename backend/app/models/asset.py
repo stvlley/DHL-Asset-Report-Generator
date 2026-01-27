@@ -10,7 +10,6 @@ Critical Design Decision:
 import uuid
 from datetime import datetime, timezone
 from sqlalchemy import Column, String, Date, DateTime, Numeric, Boolean, Index, ForeignKey
-from sqlalchemy.dialects.postgresql import UUID
 
 from app.core.database import Base
 
@@ -19,7 +18,7 @@ class AssetMaster(Base):
     __tablename__ = "assets_master"
 
     # Surrogate primary key for easier references
-    asset_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    asset_id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
 
     # Natural key components
     serial_number = Column(String(50), nullable=False, index=True)
@@ -35,12 +34,12 @@ class AssetMaster(Base):
 
     # Soft delete support - critical fix
     is_deleted = Column(Boolean, default=False, index=True)
-    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_at = Column(DateTime, nullable=True)
     deleted_by = Column(String(100), nullable=True)
 
     # Audit trail
-    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     updated_by = Column(String(100), nullable=True)
 
     # Unique constraint on serial + site combination

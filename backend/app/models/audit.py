@@ -8,7 +8,6 @@ Critical Design Decision:
 import uuid
 from datetime import datetime, timezone
 from sqlalchemy import Column, String, Integer, Date, DateTime, Text, Boolean, ForeignKey, Enum, Index
-from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 import enum
 
@@ -26,12 +25,12 @@ class ProcessingStatus(str, enum.Enum):
 class AuditSubmission(Base):
     __tablename__ = "audit_submissions"
 
-    audit_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    audit_id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     site_code = Column(String(20), ForeignKey("sites.site_code"), nullable=False, index=True)
     audit_date = Column(Date, nullable=False)
     auditor_name = Column(String(100), nullable=False)
-    upload_timestamp = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
-    uploaded_by = Column(UUID(as_uuid=True), ForeignKey("users.user_id"), nullable=False)
+    upload_timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    uploaded_by = Column(String(36), ForeignKey("users.user_id"), nullable=False)
     file_name = Column(String(255))
     total_assets_found = Column(Integer, default=0)
     processing_status = Column(Enum(ProcessingStatus), default=ProcessingStatus.PENDING)
@@ -43,8 +42,6 @@ class AuditSubmission(Base):
     variances = relationship("Variance", back_populates="audit", cascade="all, delete-orphan")
 
     __table_args__ = (
-        # Allow re-uploads for same site/date (removes unique constraint)
-        # Instead, we track the latest audit per site/date
         Index("idx_audit_site_date", "site_code", "audit_date"),
     )
 
@@ -53,7 +50,7 @@ class AuditDetail(Base):
     __tablename__ = "audit_details"
 
     detail_id = Column(Integer, primary_key=True, autoincrement=True)
-    audit_id = Column(UUID(as_uuid=True), ForeignKey("audit_submissions.audit_id", ondelete="CASCADE"), nullable=False, index=True)
+    audit_id = Column(String(36), ForeignKey("audit_submissions.audit_id", ondelete="CASCADE"), nullable=False, index=True)
     row_number = Column(Integer)  # Original row in uploaded file
     serial_number = Column(String(50), nullable=False, index=True)
     asset_type = Column(String(50), nullable=False)
