@@ -1,0 +1,15 @@
+"""
+API v1 package.
+"""
+from fastapi import APIRouter
+
+from app.api.v1.endpoints import auth, sites, assets, audits, variances, dashboard
+
+api_router = APIRouter()
+
+api_router.include_router(auth.router, prefix="/auth", tags=["Authentication"])
+api_router.include_router(sites.router, prefix="/sites", tags=["Sites"])
+api_router.include_router(assets.router, prefix="/master-data", tags=["Master Data"])
+api_router.include_router(audits.router, prefix="/audits", tags=["Audits"])
+api_router.include_router(variances.router, prefix="/variances", tags=["Variances"])
+api_router.include_router(dashboard.router, prefix="/dashboard", tags=["Dashboard"])
