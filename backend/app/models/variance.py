@@ -19,6 +19,8 @@ class VarianceType(str, enum.Enum):
     MDM_NOT_ENROLLED = "MDM_NOT_ENROLLED"  # Not in MDM
     MDM_INACTIVE_WARNING = "MDM_INACTIVE_WARNING"  # Approaching 60-day limit
     DUPLICATE_IN_AUDIT = "DUPLICATE_IN_AUDIT"  # Critical fix: track duplicate serials in audit
+    GL_MISMATCH = "GL_MISMATCH"  # Device GL doesn't match site's expected GL
+    NOT_IN_ALLOCATION = "NOT_IN_ALLOCATION"  # Device found but not in IT Allocation data
 
 
 class PriorityLevel(str, enum.Enum):
@@ -51,6 +53,12 @@ class Variance(Base):
     physical_condition = Column(String(20), nullable=True)
     asset_type = Column(String(50), nullable=True)
     model = Column(String(50), nullable=True)
+
+    # GL String tracking (from IT Allocation)
+    allocation_gl_string = Column(String(50), nullable=True)  # GL from IT Allocation data
+    expected_gl_string = Column(String(50), nullable=True)  # Expected GL for this site
+    allocation_category = Column(String(50), nullable=True)  # RF HARDWARE or RF SOFTWARE
+    allocation_amount = Column(Numeric(10, 2), nullable=True)  # Monthly cost from allocation
 
     # Financial impact
     monthly_cost_impact = Column(Numeric(10, 2), nullable=True)

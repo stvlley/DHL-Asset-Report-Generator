@@ -21,6 +21,7 @@ from app.models.audit import AuditSubmission, AuditDetail, ProcessingStatus
 from app.models.variance import Variance, VarianceType, PriorityLevel, ActionStatus
 from app.models.mdm import MDMSnapshot, MDMDetail
 from app.models.site import Site
+from app.models.it_allocation import ITAllocationSnapshot, ITAllocationDevice, SiteGLMapping
 
 
 class ReconciliationService:
@@ -135,6 +136,11 @@ class ReconciliationService:
                 variances.extend(self._process_mdm_compliance(
                     audit_id, physical_by_serial, mdm_snapshot
                 ))
+
+            # Process IT Allocation GL validation
+            variances.extend(self._process_it_allocation_validation(
+                audit_id, physical_by_serial, audit.site_code
+            ))
 
             # 4. Save variances
             for variance in variances:
@@ -497,6 +503,141 @@ Requested Action: Update condition code from '{master.recorded_condition}' to '{
 Auditor: {audit.auditor_name}
 """
 
+    # IT Allocation Integration Methods
+
+    def _get_latest_allocation_snapshot(self) -> Optional[ITAllocationSnapshot]:
+        """Get the most recent IT Allocation snapshot."""
+        return (
+            self.db.query(ITAllocationSnapshot)
+            .order_by(ITAllocationSnapshot.year.desc(), ITAllocationSnapshot.period.desc())
+            .first()
+        )
+
+    def _get_allocation_device(self, snapshot_id: str, serial: str) -> Optional[ITAllocationDevice]:
+        """Look up a device from IT Allocation by HSN (serial number)."""
+        return (
+            self.db.query(ITAllocationDevice)
+            .filter(
+                ITAllocationDevice.snapshot_id == snapshot_id,
+                ITAllocationDevice.hsn == serial
+            )
+            .first()
+        )
+
+    def _get_site_expected_gl_strings(self, site_code: str) -> List[str]:
+        """Get expected GL strings for a site from SiteGLMapping."""
+        mappings = (
+            self.db.query(SiteGLMapping)
+            .filter(SiteGLMapping.site_code == site_code)
+            .all()
+        )
+        return [m.gl_string for m in mappings]
+
+    def _process_it_allocation_validation(
+        self,
+        audit_id: UUID,
+        physical_by_serial: Dict[str, List[AuditDetail]],
+        site_code: str
+    ) -> List[Variance]:
+        """
+        Validate physical audit devices against IT Allocation data.
+
+        Checks:
+        1. Is the device in IT Allocation? (by HSN/serial)
+        2. Does the device's GL string match the site's expected GL?
+        """
+        variances = []
+
+        # Get latest IT Allocation snapshot
+        allocation_snapshot = self._get_latest_allocation_snapshot()
+        if not allocation_snapshot:
+            # No IT Allocation data - skip validation
+            return variances
+
+        # Get expected GL strings for this site
+        expected_gl_strings = self._get_site_expected_gl_strings(site_code)
+
+        for serial, assets in physical_by_serial.items():
+            physical = assets[0]
+
+            # Look up device in IT Allocation
+            allocation_device = self._get_allocation_device(
+                allocation_snapshot.snapshot_id, serial
+            )
+
+            if not allocation_device:
+                # Device not found in IT Allocation data
+                variances.append(Variance(
+                    audit_id=audit_id,
+                    serial_number=serial,
+                    variance_type=VarianceType.NOT_IN_ALLOCATION,
+                    priority=PriorityLevel.MEDIUM,
+                    physical_site=site_code,
+                    asset_type=physical.asset_type,
+                    model=physical.model,
+                    physical_condition=physical.physical_condition,
+                    action_required="Device not found in IT Allocation data - verify if device should be tracked",
+                    recommended_action="Check if device is a recent acquisition or needs to be added to IT Allocation",
+                ))
+            else:
+                # Device found - check GL string against site's expected GL
+                device_gl = allocation_device.gl_string
+
+                if expected_gl_strings and device_gl not in expected_gl_strings:
+                    # GL mismatch
+                    variances.append(Variance(
+                        audit_id=audit_id,
+                        serial_number=serial,
+                        variance_type=VarianceType.GL_MISMATCH,
+                        priority=PriorityLevel.HIGH,
+                        physical_site=site_code,
+                        asset_type=physical.asset_type,
+                        model=allocation_device.device_model or physical.model,
+                        physical_condition=physical.physical_condition,
+                        allocation_gl_string=device_gl,
+                        expected_gl_string=expected_gl_strings[0] if expected_gl_strings else None,
+                        allocation_category=allocation_device.category,
+                        allocation_amount=allocation_device.amount,
+                        monthly_cost_impact=allocation_device.amount,
+                        action_required=f"GL mismatch: Device has GL {device_gl}, but site expects {expected_gl_strings}",
+                        recommended_action="Submit GL transfer request to correct allocation",
+                        email_template=self._generate_gl_mismatch_email(
+                            physical, allocation_device, site_code, expected_gl_strings
+                        ),
+                    ))
+                # If GL matches or no expected GL configured, no variance needed
+
+        return variances
+
+    def _generate_gl_mismatch_email(
+        self,
+        physical: AuditDetail,
+        allocation_device: ITAllocationDevice,
+        site_code: str,
+        expected_gl_strings: List[str]
+    ) -> str:
+        """Generate email for GL string mismatch."""
+        return f"""To: IT Asset Management
+Subject: GL String Mismatch - {physical.serial_number}
+
+Asset Details:
+- Serial Number (HSN): {physical.serial_number}
+- Device Model: {allocation_device.device_model}
+- MAC Address: {allocation_device.mac_address or 'N/A'}
+- Category: {allocation_device.category}
+
+GL Information:
+- Current GL in IT Allocation: {allocation_device.gl_string}
+- Expected GL for Site {site_code}: {', '.join(expected_gl_strings) if expected_gl_strings else 'Not configured'}
+- Monthly Cost: ${allocation_device.amount or 0:.2f}
+
+Status: Device found at site {site_code} during physical audit, but GL string does not match expected site allocation.
+
+Requested Action: Review and update GL string to match physical location.
+
+[Site Manager Approval: Pending]
+"""
+
     def calculate_variance_summary(self, audit_id: UUID) -> Dict:
         """Calculate summary statistics for an audit's variances."""
         variances = self.db.query(Variance).filter(
@@ -548,6 +689,8 @@ Auditor: {audit.auditor_name}
                     "assets_to_remove_count": by_type.get(VarianceType.MISSING.value, 0),
                     "assets_to_transfer_count": by_type.get(VarianceType.MISALLOCATED.value, 0),
                     "assets_to_add_count": by_type.get(VarianceType.UNTRACKED.value, 0),
+                    "gl_mismatches": by_type.get(VarianceType.GL_MISMATCH.value, 0),
+                    "not_in_allocation": by_type.get(VarianceType.NOT_IN_ALLOCATION.value, 0),
                 },
                 "gl_accuracy": {
                     "assets_in_gl": assets_in_gl,
