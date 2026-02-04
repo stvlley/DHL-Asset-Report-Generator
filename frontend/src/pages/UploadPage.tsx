@@ -11,7 +11,6 @@ import {
   FileSpreadsheet,
   CheckCircle,
   AlertCircle,
-  AlertTriangle,
   Loader2,
   X,
 } from 'lucide-react'

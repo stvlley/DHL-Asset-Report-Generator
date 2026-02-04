@@ -12,6 +12,12 @@ import type {
   ActionList,
   PortfolioSummary,
   TrendData,
+  ITAllocationSnapshot,
+  ITAllocationDevice,
+  ITAllocationUploadResponse,
+  DeviceLookupResponse,
+  GLStringSummary,
+  SiteGLMapping,
 } from '../types'
 
 const API_BASE_URL = '/api/v1'
@@ -300,6 +306,93 @@ export const dashboardApi = {
     months?: number
   }): Promise<{ site_code: string | null; trends: TrendData[] }> => {
     const response = await api.get('/dashboard/trends', { params })
+    return response.data
+  },
+}
+
+// IT Allocation API
+export const itAllocationApi = {
+  upload: async (file: File): Promise<ITAllocationUploadResponse> => {
+    const formData = new FormData()
+    formData.append('file', file)
+
+    const response = await api.post<ITAllocationUploadResponse>(
+      '/it-allocation/upload',
+      formData,
+      { headers: { 'Content-Type': 'multipart/form-data' } }
+    )
+    return response.data
+  },
+
+  listSnapshots: async (limit: number = 12): Promise<ITAllocationSnapshot[]> => {
+    const response = await api.get<ITAllocationSnapshot[]>('/it-allocation/snapshots', {
+      params: { limit },
+    })
+    return response.data
+  },
+
+  getSnapshot: async (snapshotId: string): Promise<ITAllocationSnapshot & { devices: ITAllocationDevice[] }> => {
+    const response = await api.get(`/it-allocation/snapshots/${snapshotId}`)
+    return response.data
+  },
+
+  getSnapshotDevices: async (
+    snapshotId: string,
+    params?: { category?: string; limit?: number; offset?: number }
+  ): Promise<ITAllocationDevice[]> => {
+    const response = await api.get<ITAllocationDevice[]>(
+      `/it-allocation/snapshots/${snapshotId}/devices`,
+      { params }
+    )
+    return response.data
+  },
+
+  lookupDevice: async (serialNumber: string): Promise<DeviceLookupResponse> => {
+    const response = await api.get<DeviceLookupResponse>(
+      `/it-allocation/lookup/${serialNumber}`
+    )
+    return response.data
+  },
+
+  getGLSummary: async (snapshotId?: string): Promise<GLStringSummary[]> => {
+    const response = await api.get<GLStringSummary[]>('/it-allocation/gl-summary', {
+      params: snapshotId ? { snapshot_id: snapshotId } : {},
+    })
+    return response.data
+  },
+
+  // Site GL Mappings
+  createSiteGLMapping: async (data: {
+    site_code: string
+    gl_string: string
+    category?: string
+    is_primary?: number
+    notes?: string
+  }): Promise<SiteGLMapping> => {
+    const response = await api.post<SiteGLMapping>('/it-allocation/site-gl-mappings', data)
+    return response.data
+  },
+
+  getSiteGLMappings: async (siteCode: string): Promise<SiteGLMapping[]> => {
+    const response = await api.get<SiteGLMapping[]>(
+      `/it-allocation/site-gl-mappings/${siteCode}`
+    )
+    return response.data
+  },
+
+  deleteSiteGLMapping: async (mappingId: number): Promise<void> => {
+    await api.delete(`/it-allocation/site-gl-mappings/${mappingId}`)
+  },
+
+  validateSiteGLMappings: async (siteCode: string): Promise<{
+    site_code: string
+    mapped_gl_strings: string[]
+    allocation_gl_strings: string[]
+    missing_in_allocation: string[]
+    available_in_allocation: string[]
+    valid: boolean
+  }> => {
+    const response = await api.get(`/it-allocation/site-gl-mappings/${siteCode}/validate`)
     return response.data
   },
 }

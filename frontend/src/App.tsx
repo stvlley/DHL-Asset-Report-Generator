@@ -8,6 +8,7 @@ import AuditsPage from './pages/AuditsPage'
 import AuditDetailPage from './pages/AuditDetailPage'
 import MasterDataPage from './pages/MasterDataPage'
 import SitesPage from './pages/SitesPage'
+import ITAllocationPage from './pages/ITAllocationPage'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuthStore()
@@ -39,6 +40,7 @@ function App() {
           <Route path="audits/:auditId" element={<AuditDetailPage />} />
           <Route path="master-data" element={<MasterDataPage />} />
           <Route path="sites" element={<SitesPage />} />
+          <Route path="it-allocation" element={<ITAllocationPage />} />
         </Route>
       </Routes>
     </BrowserRouter>

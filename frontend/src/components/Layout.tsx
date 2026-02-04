@@ -7,6 +7,7 @@ import {
   FileText,
   Database,
   Building2,
+  DollarSign,
   LogOut,
   Menu,
   X,
@@ -19,6 +20,7 @@ const navigation = [
   { name: 'Audits', href: '/audits', icon: FileText },
   { name: 'Master Data', href: '/master-data', icon: Database },
   { name: 'Sites', href: '/sites', icon: Building2 },
+  { name: 'IT Allocation', href: '/it-allocation', icon: DollarSign },
 ]
 
 export default function Layout() {

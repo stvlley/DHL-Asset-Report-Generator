@@ -1,18 +1,15 @@
 import { useParams, Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { auditsApi, sitesApi } from '../services/api'
+import { auditsApi } from '../services/api'
 import { format } from 'date-fns'
 import {
   ArrowLeft,
   Download,
   CheckCircle,
-  AlertTriangle,
-  XCircle,
   Minus,
   Plus,
   ArrowRight,
   Wrench,
-  Wifi,
   Copy,
 } from 'lucide-react'
 
@@ -36,16 +33,6 @@ export default function AuditDetailPage() {
     queryFn: () => auditsApi.getActionList(auditId!),
     enabled: !!auditId,
   })
-
-  const { data: sites } = useQuery({
-    queryKey: ['sites'],
-    queryFn: () => sitesApi.list(),
-  })
-
-  const getSiteName = (siteCode: string) => {
-    const site = sites?.find((s) => s.site_code === siteCode)
-    return site?.site_name || siteCode
-  }
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text)

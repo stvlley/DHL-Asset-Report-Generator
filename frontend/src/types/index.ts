@@ -85,6 +85,8 @@ export type VarianceType =
   | 'MDM_NOT_ENROLLED'
   | 'MDM_INACTIVE_WARNING'
   | 'DUPLICATE_IN_AUDIT'
+  | 'GL_MISMATCH'
+  | 'NOT_IN_ALLOCATION'
 
 export type PriorityLevel = 'HIGH' | 'MEDIUM' | 'LOW' | 'INFO'
 
@@ -216,4 +218,75 @@ export interface TrendData {
   gl_accuracy_pct: number | null
   potential_savings: number
   total_assets: number
+}
+
+// IT Allocation types
+export interface ITAllocationSnapshot {
+  snapshot_id: string
+  upload_timestamp: string
+  period: number
+  year: number
+  file_name: string | null
+  total_records: number
+  rf_hardware_count: number
+  rf_software_count: number
+  uploaded_by: string | null
+}
+
+export interface ITAllocationDevice {
+  device_id: number
+  snapshot_id: string
+  hsn: string | null
+  mac_address: string | null
+  device_model: string | null
+  gl_string: string
+  category: string
+  amount: number
+  gl_company: string | null
+  gl_cost_center: string | null
+  gl_cost_unit: string | null
+  gl_account: string | null
+  gl_activity: string | null
+  gl_sub_account: string | null
+}
+
+export interface ITAllocationUploadResponse {
+  status: string
+  snapshot_id: string
+  message: string
+  total_records: number
+  rf_hardware_count: number
+  rf_software_count: number
+  unique_devices: number
+  unique_gl_strings: number
+  parsing_errors: { row?: number; error: string }[]
+}
+
+export interface DeviceLookupResponse {
+  found: boolean
+  hsn: string | null
+  mac_address: string | null
+  device_model: string | null
+  gl_string: string | null
+  category: string | null
+  amount: number | null
+  snapshot_period: string | null
+}
+
+export interface GLStringSummary {
+  gl_string: string
+  category: string
+  device_count: number
+  total_amount: number
+}
+
+export interface SiteGLMapping {
+  mapping_id: number
+  site_code: string
+  gl_string: string
+  category: string | null
+  is_primary: number
+  notes: string | null
+  created_at: string
+  updated_at: string
 }
