@@ -3,13 +3,13 @@ Sites management endpoints.
 """
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.core.database import get_db
 from app.api.v1.endpoints.auth import get_current_user
 from app.models.user import User
 from app.models.site import Site
-from app.schemas.site import SiteCreate, SiteUpdate, SiteResponse
+from app.schemas.site import SiteCreate, SiteUpdate, SiteResponse, SiteDetailResponse
 from app.services.auth_service import AuthService
 
 
@@ -132,3 +132,65 @@ async def update_site(
     db.refresh(site)
 
     return site
+
+
+@router.get("/{site_code}/detail", response_model=SiteDetailResponse)
+async def get_site_detail(
+    site_code: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get site with GL mappings."""
+    auth_service = AuthService(db)
+
+    site = (
+        db.query(Site)
+        .options(joinedload(Site.gl_mappings))
+        .filter(Site.site_code == site_code)
+        .first()
+    )
+
+    if not site:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Site not found"
+        )
+
+    # Check access
+    if not auth_service.check_permission(current_user, "view_all_sites"):
+        if site_code not in (current_user.assigned_sites or []):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied to this site"
+            )
+
+    return site
+
+
+@router.delete("/{site_code}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_site(
+    site_code: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Delete site (admin only). Sets is_active to False."""
+    auth_service = AuthService(db)
+
+    if not auth_service.check_permission(current_user, "view_all_sites"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required"
+        )
+
+    site = db.query(Site).filter(Site.site_code == site_code).first()
+    if not site:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Site not found"
+        )
+
+    # Soft delete
+    site.is_active = False
+    db.commit()
+
+    return None

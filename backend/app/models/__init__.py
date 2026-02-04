@@ -8,6 +8,7 @@ from app.models.audit import AuditSubmission, AuditDetail
 from app.models.mdm import MDMSnapshot, MDMDetail
 from app.models.variance import Variance
 from app.models.audit_log import AuditLog
+from app.models.it_allocation import ITAllocationSnapshot, ITAllocationDevice, SiteGLMapping
 
 __all__ = [
     "User",
@@ -19,4 +20,7 @@ __all__ = [
     "MDMDetail",
     "Variance",
     "AuditLog",
+    "ITAllocationSnapshot",
+    "ITAllocationDevice",
+    "SiteGLMapping",
 ]
