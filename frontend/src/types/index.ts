@@ -98,17 +98,20 @@ export interface Variance {
   serial_number: string | null
   variance_type: VarianceType
   priority: PriorityLevel
+  description: string | null
   current_gl_site: string | null
   physical_site: string | null
+  expected_site_code: string | null
+  gl_string: string | null
   master_condition: string | null
   physical_condition: string | null
   asset_type: string | null
   model: string | null
-  monthly_cost_impact: number | null
+  monthly_cost_impact: number
   action_required: string | null
   recommended_action: string | null
   email_template: string | null
-  status: ActionStatus
+  status: string
   assigned_to: string | null
   resolution_notes: string | null
   resolved_at: string | null
