@@ -310,6 +310,214 @@ export const dashboardApi = {
   },
 }
 
+// Asset Management API (new endpoints)
+export const assetManagementApi = {
+  list: async (params?: {
+    site_code?: string
+    asset_type?: string
+    mdm_status?: string
+    search?: string
+    include_deleted?: boolean
+    limit?: number
+    offset?: number
+  }): Promise<{ items: Asset[]; total: number; limit: number; offset: number }> => {
+    const response = await api.get('/assets', { params })
+    return response.data
+  },
+
+  getStats: async (siteCode?: string): Promise<{
+    total_assets: number
+    by_asset_type: Record<string, number>
+    by_mdm_status: Record<string, number>
+    total_monthly_cost: number
+    total_annual_cost: number
+    mdm_disconnected_30_days: number
+  }> => {
+    const response = await api.get('/assets/stats', {
+      params: siteCode ? { site_code: siteCode } : {},
+    })
+    return response.data
+  },
+
+  getDisconnected: async (
+    siteCode?: string,
+    days: number = 30
+  ): Promise<{
+    days_threshold: number
+    count: number
+    devices: Asset[]
+  }> => {
+    const response = await api.get('/assets/disconnected', {
+      params: { site_code: siteCode, days },
+    })
+    return response.data
+  },
+
+  getYearlySummary: async (
+    year: number,
+    siteCode?: string,
+    glString?: string
+  ): Promise<{
+    year: number
+    total_annual_cost: number
+    average_monthly_cost: number
+    monthly_breakdown: { month: string; period: number; year: number; total: number; device_count: number }[]
+    by_category: Record<string, number>
+    by_gl_string: Record<string, number>
+  }> => {
+    const response = await api.get('/assets/yearly-summary', {
+      params: { year, site_code: siteCode, gl_string: glString },
+    })
+    return response.data
+  },
+
+  getReconciliationSummary: async (siteCode: string): Promise<{
+    site_code: string
+    total_assets: number
+    with_billing_data: number
+    without_billing_data: number
+    with_mdm_status: number
+    without_mdm_status: number
+    mdm_disconnected_60_days: number
+    total_monthly_cost: number
+    total_annual_cost: number
+    by_condition: Record<string, number>
+  }> => {
+    const response = await api.get(`/assets/reconciliation-summary/${siteCode}`)
+    return response.data
+  },
+
+  importKLSWorkbook: async (
+    file: File,
+    siteCode: string,
+    glString: string
+  ): Promise<{
+    status: string
+    import_stats: {
+      asset_detail: { imported: number; updated: number; errors: unknown[] }
+      it_allocation: { matched: number; unmatched: number; total_monthly_cost: number }
+      pbi_import: { matched: number; unmatched: number; connected: number; disconnected: number }
+      scan_audit: { total_scans: number; found: number; not_in_system: number }
+    }
+    reconciliation_summary: {
+      site_code: string
+      total_assets: number
+      with_billing_data: number
+      with_mdm_status: number
+      mdm_disconnected_60_days: number
+      total_monthly_cost: number
+      total_annual_cost: number
+      by_condition: Record<string, number>
+    }
+  }> => {
+    const formData = new FormData()
+    formData.append('file', file)
+
+    const response = await api.post(
+      `/assets/import-kls-workbook?site_code=${encodeURIComponent(siteCode)}&gl_string=${encodeURIComponent(glString)}`,
+      formData,
+      { headers: { 'Content-Type': 'multipart/form-data' } }
+    )
+    return response.data
+  },
+
+  create: async (data: {
+    serial_number: string
+    assigned_site_code: string
+    asset_type: string
+    model: string
+    gl_string: string
+    hsn?: string
+    mac_address?: string
+    recorded_condition?: string
+    cost_per_month?: number
+    notes?: string
+  }): Promise<Asset> => {
+    const response = await api.post<Asset>('/assets', data)
+    return response.data
+  },
+
+  update: async (
+    assetId: string,
+    data: Partial<{
+      serial_number: string
+      assigned_site_code: string
+      asset_type: string
+      model: string
+      gl_string: string
+      recorded_condition: string
+      cost_per_month: number
+      notes: string
+    }>
+  ): Promise<Asset> => {
+    const response = await api.patch<Asset>(`/assets/${assetId}`, data)
+    return response.data
+  },
+
+  transfer: async (
+    assetId: string,
+    newSiteCode: string,
+    newGlString?: string,
+    notes?: string
+  ): Promise<Asset> => {
+    const response = await api.post<Asset>(`/assets/${assetId}/transfer`, {
+      new_site_code: newSiteCode,
+      new_gl_string: newGlString,
+      notes,
+    })
+    return response.data
+  },
+
+  delete: async (assetId: string, hardDelete: boolean = false): Promise<void> => {
+    await api.delete(`/assets/${assetId}`, { params: { hard_delete: hardDelete } })
+  },
+}
+
+// Settings API
+export const settingsApi = {
+  getSotiStatus: async (): Promise<{
+    configured: boolean
+    source: string | null
+    message: string
+    base_url: string | null
+  }> => {
+    const response = await api.get('/settings/soti/status')
+    return response.data
+  },
+
+  getMdmStatus: async (): Promise<{
+    sources: {
+      soti_api: { available: boolean; status: unknown }
+      manual_pbi_import: { available: boolean; description: string }
+    }
+    recommended: string
+    message: string
+  }> => {
+    const response = await api.get('/settings/mdm/status')
+    return response.data
+  },
+
+  configureSoti: async (config: {
+    base_url: string
+    client_id: string
+    client_secret: string
+    username: string
+    password: string
+  }): Promise<{ status: string; message: string; configured: boolean }> => {
+    const response = await api.post('/settings/soti/configure', config)
+    return response.data
+  },
+
+  testSotiConnection: async (): Promise<{
+    success: boolean
+    message: string
+    device_count?: number
+  }> => {
+    const response = await api.post('/settings/soti/test')
+    return response.data
+  },
+}
+
 // IT Allocation API
 export const itAllocationApi = {
   upload: async (file: File): Promise<ITAllocationUploadResponse> => {

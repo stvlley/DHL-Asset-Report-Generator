@@ -180,6 +180,8 @@ class AuthService:
             UserRole.ADMIN: [
                 "view_all_sites",
                 "upload_master_data",
+                "manage_assets",
+                "manage_settings",
                 "manage_users",
                 "view_audit_log",
                 "delete_audits",

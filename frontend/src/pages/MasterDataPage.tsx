@@ -1,28 +1,33 @@
 import { useState, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useDropzone } from 'react-dropzone'
-import { assetsApi, sitesApi } from '../services/api'
+import { assetManagementApi, sitesApi } from '../services/api'
 import {
   Database,
   Upload,
-  Download,
   Search,
   FileSpreadsheet,
   CheckCircle,
   AlertCircle,
+  AlertTriangle,
   X,
+  Wifi,
+  WifiOff,
+  DollarSign,
+  BarChart3,
+  RefreshCw,
 } from 'lucide-react'
 
 export default function MasterDataPage() {
   const [selectedSite, setSelectedSite] = useState<string>('')
   const [searchTerm, setSearchTerm] = useState('')
-  const [showUpload, setShowUpload] = useState(false)
-  const [uploadFile, setUploadFile] = useState<File | null>(null)
-  const [uploadResult, setUploadResult] = useState<{
+  const [showImport, setShowImport] = useState(false)
+  const [importFile, setImportFile] = useState<File | null>(null)
+  const [glString, setGlString] = useState('61.5851.5531.8233.10.000')
+  const [importResult, setImportResult] = useState<{
     status: 'success' | 'error'
     message: string
-    created?: number
-    updated?: number
+    stats?: unknown
   } | null>(null)
   const queryClient = useQueryClient()
 
@@ -31,35 +36,53 @@ export default function MasterDataPage() {
     queryFn: () => sitesApi.list(),
   })
 
-  const { data: assets, isLoading } = useQuery({
-    queryKey: ['assets', selectedSite],
-    queryFn: () => assetsApi.list({ site_code: selectedSite || undefined, limit: 100 }),
+  const { data: assetsData, isLoading } = useQuery({
+    queryKey: ['assets-managed', selectedSite, searchTerm],
+    queryFn: () =>
+      assetManagementApi.list({
+        site_code: selectedSite || undefined,
+        search: searchTerm || undefined,
+        limit: 100,
+      }),
   })
 
-  const uploadMutation = useMutation({
-    mutationFn: (file: File) => assetsApi.bulkUpload(file),
+  const { data: reconciliation } = useQuery({
+    queryKey: ['reconciliation-summary', selectedSite],
+    queryFn: () => assetManagementApi.getReconciliationSummary(selectedSite),
+    enabled: !!selectedSite,
+  })
+
+  const { data: disconnected } = useQuery({
+    queryKey: ['disconnected-devices', selectedSite],
+    queryFn: () => assetManagementApi.getDisconnected(selectedSite || undefined, 60),
+  })
+
+  const importMutation = useMutation({
+    mutationFn: ({ file, siteCode, gl }: { file: File; siteCode: string; gl: string }) =>
+      assetManagementApi.importKLSWorkbook(file, siteCode, gl),
     onSuccess: (result) => {
-      setUploadResult({
+      setImportResult({
         status: 'success',
-        message: `Upload complete: ${result.created} created, ${result.updated} updated`,
-        created: result.created,
-        updated: result.updated,
+        message: `Import complete: ${result.import_stats.asset_detail.imported} assets imported`,
+        stats: result,
       })
-      setUploadFile(null)
-      queryClient.invalidateQueries({ queryKey: ['assets'] })
+      setImportFile(null)
+      queryClient.invalidateQueries({ queryKey: ['assets-managed'] })
+      queryClient.invalidateQueries({ queryKey: ['reconciliation-summary'] })
+      queryClient.invalidateQueries({ queryKey: ['disconnected-devices'] })
     },
-    onError: () => {
-      setUploadResult({
+    onError: (error: Error) => {
+      setImportResult({
         status: 'error',
-        message: 'Upload failed. Please check file format.',
+        message: `Import failed: ${error.message}`,
       })
     },
   })
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     if (acceptedFiles.length > 0) {
-      setUploadFile(acceptedFiles[0])
-      setUploadResult(null)
+      setImportFile(acceptedFiles[0])
+      setImportResult(null)
     }
   }, [])
 
@@ -67,75 +90,211 @@ export default function MasterDataPage() {
     onDrop,
     accept: {
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
-      'application/vnd.ms-excel': ['.xls'],
-      'text/csv': ['.csv'],
     },
     maxFiles: 1,
   })
 
-  const handleUpload = () => {
-    if (uploadFile) {
-      uploadMutation.mutate(uploadFile)
+  const handleImport = () => {
+    if (importFile && selectedSite) {
+      importMutation.mutate({ file: importFile, siteCode: selectedSite, gl: glString })
     }
   }
 
-  const filteredAssets = assets?.filter(
-    (asset) =>
-      asset.serial_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      asset.asset_type.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      asset.model.toLowerCase().includes(searchTerm.toLowerCase())
-  )
+  const assets = assetsData?.items || []
 
   return (
     <div className="space-y-6">
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Master Data</h1>
           <p className="text-sm text-gray-500 mt-1">
-            View and manage the corporate asset database
+            Asset database with IT Allocation costs and MDM status
           </p>
         </div>
         <div className="flex gap-2">
-          <a
-            href={assetsApi.exportUrl(selectedSite || undefined)}
+          <button
+            onClick={() => queryClient.invalidateQueries()}
             className="btn-secondary"
-            download
           >
-            <Download className="w-4 h-4 mr-2" />
-            Export
-          </a>
-          <button onClick={() => setShowUpload(!showUpload)} className="btn-primary">
+            <RefreshCw className="w-4 h-4 mr-2" />
+            Refresh
+          </button>
+          <button onClick={() => setShowImport(!showImport)} className="btn-primary">
             <Upload className="w-4 h-4 mr-2" />
-            Upload
+            Import Workbook
           </button>
         </div>
       </div>
 
-      {/* Upload Section */}
-      {showUpload && (
+      {/* Disconnected Devices Alert */}
+      {disconnected && disconnected.count > 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+          <div className="flex items-start">
+            <AlertTriangle className="w-5 h-5 text-amber-500 mt-0.5" />
+            <div className="ml-3">
+              <h3 className="text-sm font-medium text-amber-800">
+                {disconnected.count} Device{disconnected.count > 1 ? 's' : ''} Not Connected
+              </h3>
+              <p className="text-sm text-amber-700 mt-1">
+                These devices haven't connected to MDM in {disconnected.days_threshold}+ days
+                and may require attention.
+              </p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {disconnected.devices.slice(0, 5).map((device) => (
+                  <span
+                    key={device.asset_id}
+                    className="inline-flex items-center px-2 py-1 rounded text-xs bg-amber-100 text-amber-800"
+                  >
+                    <WifiOff className="w-3 h-3 mr-1" />
+                    {device.serial_number}
+                  </span>
+                ))}
+                {disconnected.count > 5 && (
+                  <span className="text-xs text-amber-600">
+                    +{disconnected.count - 5} more
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Stats Cards */}
+      {selectedSite && reconciliation && (
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+          <div className="card p-4">
+            <div className="flex items-center">
+              <Database className="w-8 h-8 text-blue-500" />
+              <div className="ml-3">
+                <p className="text-2xl font-bold">{reconciliation.total_assets}</p>
+                <p className="text-xs text-gray-500">Total Assets</p>
+              </div>
+            </div>
+          </div>
+          <div className="card p-4">
+            <div className="flex items-center">
+              <DollarSign className="w-8 h-8 text-green-500" />
+              <div className="ml-3">
+                <p className="text-2xl font-bold">
+                  ${reconciliation.total_monthly_cost.toLocaleString()}
+                </p>
+                <p className="text-xs text-gray-500">Monthly Cost</p>
+              </div>
+            </div>
+          </div>
+          <div className="card p-4">
+            <div className="flex items-center">
+              <BarChart3 className="w-8 h-8 text-purple-500" />
+              <div className="ml-3">
+                <p className="text-2xl font-bold">{reconciliation.with_billing_data}</p>
+                <p className="text-xs text-gray-500">With Billing</p>
+              </div>
+            </div>
+          </div>
+          <div className="card p-4">
+            <div className="flex items-center">
+              <Wifi className="w-8 h-8 text-cyan-500" />
+              <div className="ml-3">
+                <p className="text-2xl font-bold">{reconciliation.with_mdm_status}</p>
+                <p className="text-xs text-gray-500">MDM Tracked</p>
+              </div>
+            </div>
+          </div>
+          <div className="card p-4">
+            <div className="flex items-center">
+              <CheckCircle className="w-8 h-8 text-green-500" />
+              <div className="ml-3">
+                <p className="text-2xl font-bold">{reconciliation.by_condition?.Good || 0}</p>
+                <p className="text-xs text-gray-500">Good Condition</p>
+              </div>
+            </div>
+          </div>
+          <div className="card p-4">
+            <div className="flex items-center">
+              <AlertCircle className="w-8 h-8 text-red-500" />
+              <div className="ml-3">
+                <p className="text-2xl font-bold">{reconciliation.by_condition?.Bad || 0}</p>
+                <p className="text-xs text-gray-500">Bad Condition</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Import Section */}
+      {showImport && (
         <div className="card p-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-4">
-            Bulk Upload Master Data
+            Import KLS Asset Audit Workbook
           </h2>
 
-          {uploadResult && (
+          {importResult && (
             <div
               className={`mb-4 p-4 rounded-md flex items-start ${
-                uploadResult.status === 'success'
+                importResult.status === 'success'
                   ? 'bg-green-50 text-green-700'
                   : 'bg-red-50 text-red-700'
               }`}
             >
-              {uploadResult.status === 'success' ? (
+              {importResult.status === 'success' ? (
                 <CheckCircle className="w-5 h-5 mr-2 flex-shrink-0" />
               ) : (
                 <AlertCircle className="w-5 h-5 mr-2 flex-shrink-0" />
               )}
-              {uploadResult.message}
+              <div>
+                <p>{importResult.message}</p>
+                {importResult.status === 'success' && importResult.stats && (
+                  <div className="mt-2 text-sm">
+                    <p>
+                      • IT Allocation matched:{' '}
+                      {(importResult.stats as { import_stats: { it_allocation: { matched: number } } }).import_stats.it_allocation.matched}
+                    </p>
+                    <p>
+                      • MDM status synced:{' '}
+                      {(importResult.stats as { import_stats: { pbi_import: { matched: number } } }).import_stats.pbi_import.matched}
+                    </p>
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
-          {!uploadFile ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Site Code *
+              </label>
+              <select
+                value={selectedSite}
+                onChange={(e) => setSelectedSite(e.target.value)}
+                className="input"
+                required
+              >
+                <option value="">Select Site</option>
+                {sites?.map((site) => (
+                  <option key={site.site_code} value={site.site_code}>
+                    {site.site_code} - {site.site_name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Default GL String
+              </label>
+              <input
+                type="text"
+                value={glString}
+                onChange={(e) => setGlString(e.target.value)}
+                className="input"
+                placeholder="61.5851.5531.8233.10.000"
+              />
+            </div>
+          </div>
+
+          {!importFile ? (
             <div
               {...getRootProps()}
               className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer ${
@@ -145,7 +304,10 @@ export default function MasterDataPage() {
               <input {...getInputProps()} />
               <Upload className="w-10 h-10 mx-auto text-gray-400" />
               <p className="mt-2 text-sm text-gray-600">
-                Drop Excel/CSV file here or click to browse
+                Drop your KLS Asset Audit workbook here or click to browse
+              </p>
+              <p className="text-xs text-gray-400 mt-1">
+                Supports multi-sheet Excel files with Asset Detail, IT Allocation, PBI Import
               </p>
             </div>
           ) : (
@@ -153,33 +315,35 @@ export default function MasterDataPage() {
               <div className="flex items-center">
                 <FileSpreadsheet className="w-8 h-8 text-green-500" />
                 <div className="ml-3">
-                  <p className="text-sm font-medium">{uploadFile.name}</p>
+                  <p className="text-sm font-medium">{importFile.name}</p>
                   <p className="text-xs text-gray-500">
-                    {(uploadFile.size / 1024).toFixed(1)} KB
+                    {(importFile.size / 1024).toFixed(1)} KB
                   </p>
                 </div>
               </div>
               <div className="flex gap-2">
-                <button onClick={() => setUploadFile(null)} className="btn-secondary">
+                <button onClick={() => setImportFile(null)} className="btn-secondary">
                   <X className="w-4 h-4" />
                 </button>
                 <button
-                  onClick={handleUpload}
-                  disabled={uploadMutation.isPending}
+                  onClick={handleImport}
+                  disabled={importMutation.isPending || !selectedSite}
                   className="btn-primary"
                 >
-                  {uploadMutation.isPending ? 'Uploading...' : 'Upload'}
+                  {importMutation.isPending ? 'Importing...' : 'Import'}
                 </button>
               </div>
             </div>
           )}
 
           <div className="mt-4 p-4 bg-blue-50 rounded-lg text-sm text-blue-700">
-            <p className="font-medium">Required columns:</p>
-            <p>serial_number, asset_type, model, assigned_site_code, gl_string</p>
-            <p className="mt-1">
-              Optional: acquisition_date, recorded_condition, cost_per_month
-            </p>
+            <p className="font-medium">This import will:</p>
+            <ul className="list-disc list-inside mt-1 space-y-1">
+              <li>Import devices from "Asset Detail" sheet as master data</li>
+              <li>Sync monthly costs from "IT Allocation Import" sheet</li>
+              <li>Update MDM status from "PBI Import" sheet</li>
+              <li>Process scan statistics from "Scan Audit" sheet</li>
+            </ul>
           </div>
         </div>
       )}
@@ -192,7 +356,7 @@ export default function MasterDataPage() {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
               <input
                 type="text"
-                placeholder="Search by serial, type, or model..."
+                placeholder="Search by serial, model, or MAC..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="input pl-10"
@@ -222,7 +386,7 @@ export default function MasterDataPage() {
           <div className="flex items-center justify-center h-48">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-dhl-red" />
           </div>
-        ) : filteredAssets && filteredAssets.length > 0 ? (
+        ) : assets && assets.length > 0 ? (
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
@@ -240,10 +404,10 @@ export default function MasterDataPage() {
                     Site
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                    GL String
+                    Condition
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                    Condition
+                    MDM Status
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                     Cost/Mo
@@ -251,10 +415,15 @@ export default function MasterDataPage() {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {filteredAssets.map((asset) => (
+                {assets.map((asset) => (
                   <tr key={asset.asset_id} className="hover:bg-gray-50">
                     <td className="px-4 py-3 text-sm font-medium text-gray-900">
                       {asset.serial_number}
+                      {asset.hsn && asset.hsn !== asset.serial_number && (
+                        <span className="block text-xs text-gray-400">
+                          HSN: {asset.hsn}
+                        </span>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-500">
                       {asset.asset_type}
@@ -262,9 +431,6 @@ export default function MasterDataPage() {
                     <td className="px-4 py-3 text-sm text-gray-500">{asset.model}</td>
                     <td className="px-4 py-3 text-sm text-gray-500">
                       {asset.assigned_site_code}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-gray-500">
-                      {asset.gl_string}
                     </td>
                     <td className="px-4 py-3 text-sm">
                       <span
@@ -279,8 +445,25 @@ export default function MasterDataPage() {
                         {asset.recorded_condition || 'N/A'}
                       </span>
                     </td>
+                    <td className="px-4 py-3 text-sm">
+                      {asset.mdm_enrollment_status === 'enrolled' ? (
+                        <span className="inline-flex items-center px-2 py-1 text-xs font-medium rounded bg-green-100 text-green-700">
+                          <Wifi className="w-3 h-3 mr-1" />
+                          {asset.mdm_days_since_connect === 0
+                            ? 'Connected'
+                            : `${asset.mdm_days_since_connect}d ago`}
+                        </span>
+                      ) : asset.mdm_enrollment_status === 'not_enrolled' ? (
+                        <span className="inline-flex items-center px-2 py-1 text-xs font-medium rounded bg-gray-100 text-gray-600">
+                          <WifiOff className="w-3 h-3 mr-1" />
+                          Not Enrolled
+                        </span>
+                      ) : (
+                        <span className="text-xs text-gray-400">-</span>
+                      )}
+                    </td>
                     <td className="px-4 py-3 text-sm text-gray-500">
-                      ${asset.cost_per_month || 0}
+                      {asset.cost_per_month ? `$${Number(asset.cost_per_month).toFixed(2)}` : '-'}
                     </td>
                   </tr>
                 ))}
@@ -290,10 +473,21 @@ export default function MasterDataPage() {
         ) : (
           <div className="p-8 text-center">
             <Database className="w-12 h-12 mx-auto text-gray-400" />
-            <p className="mt-4 text-sm text-gray-500">No assets found</p>
+            <p className="mt-4 text-sm text-gray-500">
+              {selectedSite
+                ? 'No assets found for this site. Import a workbook to get started.'
+                : 'Select a site to view assets or import a workbook.'}
+            </p>
           </div>
         )}
       </div>
+
+      {/* Pagination info */}
+      {assetsData && (
+        <div className="text-sm text-gray-500 text-center">
+          Showing {assets.length} of {assetsData.total} assets
+        </div>
+      )}
     </div>
   )
 }
