@@ -61,6 +61,7 @@ class ITAllocationUploadResponse(BaseModel):
     unique_devices: int
     unique_gl_strings: int
     parsing_errors: List[dict] = []
+    categories_found: List[str] = []  # All unique categories in the file
 
 
 class SiteGLMappingBase(BaseModel):

@@ -19,12 +19,13 @@ from app.schemas.it_allocation import (
 class ITAllocationService:
     """Service for processing IT Allocation data."""
 
-    # Categories to extract (RF Hardware and Software)
-    RF_CATEGORIES = ["RF HARDWARE", "RF SOFTWARE"]
+    # Categories to extract (RF Hardware and Software) - case insensitive matching
+    RF_CATEGORIES = ["RF HARDWARE", "RF SOFTWARE", "RF-HARDWARE", "RF-SOFTWARE",
+                     "RFHARDWARE", "RFSOFTWARE", "RF_HARDWARE", "RF_SOFTWARE"]
 
-    # Regex patterns for extracting device info
-    HSN_PATTERN = re.compile(r'HSN:\s*(\d+)', re.IGNORECASE)
-    MAC_PATTERN = re.compile(r'MAC:\s*([a-fA-F0-9]+)', re.IGNORECASE)
+    # Regex patterns for extracting device info from Detail2(PRJ.) field
+    HSN_PATTERN = re.compile(r'HSN[:\s]*(\d+)', re.IGNORECASE)
+    MAC_PATTERN = re.compile(r'MAC[:\s]*([a-fA-F0-9:]+)', re.IGNORECASE)
 
     def __init__(self, db: Session):
         self.db = db
@@ -64,6 +65,9 @@ class ITAllocationService:
                 parsing_errors=[{"error": str(e)}]
             )
 
+        # Normalize column names (strip whitespace, handle variations)
+        df.columns = df.columns.str.strip()
+
         # Extract period and year from data
         period = int(df["Period"].iloc[0]) if "Period" in df.columns else datetime.now().month
         year = int(df["Year"].iloc[0]) if "Year" in df.columns else datetime.now().year
@@ -74,13 +78,30 @@ class ITAllocationService:
             year=year,
             file_name=file_name,
             total_records=len(df),
-            uploaded_by=user_id
+            uploaded_by=str(user_id) if user_id else None
         )
         self.db.add(snapshot)
         self.db.flush()  # Get snapshot_id
 
-        # Filter to RF categories only
-        rf_df = df[df["Category"].isin(self.RF_CATEGORIES)]
+        # Normalize category column for case-insensitive matching
+        if "Category" in df.columns:
+            df["_category_normalized"] = df["Category"].astype(str).str.strip().str.upper().str.replace(" ", "").str.replace("-", "").str.replace("_", "")
+        else:
+            return ITAllocationUploadResponse(
+                status="error",
+                snapshot_id="",
+                message="Missing 'Category' column in Excel file",
+                total_records=len(df),
+                rf_hardware_count=0,
+                rf_software_count=0,
+                unique_devices=0,
+                unique_gl_strings=0,
+                parsing_errors=[{"error": "Missing Category column"}]
+            )
+
+        # Filter to RF categories only (normalized matching)
+        rf_normalized = ["RFHARDWARE", "RFSOFTWARE"]
+        rf_df = df[df["_category_normalized"].isin(rf_normalized)]
 
         rf_hardware_count = 0
         rf_software_count = 0
@@ -117,16 +138,20 @@ class ITAllocationService:
         # Get unique GL strings
         unique_gl = rf_df["GL String"].nunique() if "GL String" in rf_df.columns else 0
 
+        # Get all unique categories in the file for debugging
+        all_categories = df["Category"].dropna().unique().tolist() if "Category" in df.columns else []
+
         return ITAllocationUploadResponse(
             status="success",
-            snapshot_id=snapshot.snapshot_id,
+            snapshot_id=str(snapshot.snapshot_id),
             message=f"Successfully processed {rf_hardware_count + rf_software_count} RF devices",
             total_records=len(df),
             rf_hardware_count=rf_hardware_count,
             rf_software_count=rf_software_count,
             unique_devices=len(devices_added),
             unique_gl_strings=unique_gl,
-            parsing_errors=errors
+            parsing_errors=errors,
+            categories_found=all_categories
         )
 
     def _parse_device_row(self, row: pd.Series, snapshot_id: str) -> Optional[ITAllocationDevice]:
