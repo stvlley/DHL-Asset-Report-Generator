@@ -18,10 +18,29 @@ from app.core.config import settings
 class FileService:
     """Service for processing uploaded files."""
 
+    # Column mappings for audit files (template uses SN, can also accept serial_number)
+    AUDIT_COLUMN_ALIASES = {
+        "sn": "serial_number",
+        "serial": "serial_number",
+        "serial_number": "serial_number",
+        "asset_number": "asset_number",
+        "asset_type": "asset_type",
+        "type": "asset_type",
+        "model": "model",
+        "condition": "condition",
+        "status": "condition",
+        "comment": "location_notes",
+        "comments": "location_notes",
+        "notes": "location_notes",
+        "location_notes": "location_notes",
+    }
+
     REQUIRED_AUDIT_COLUMNS = ["serial_number", "asset_type", "model", "condition"]
     REQUIRED_MASTER_COLUMNS = [
         "serial_number", "asset_type", "model", "assigned_site_code", "gl_string"
     ]
+    # For scanned data, only Good/Bad are valid; RMA/Lost are determined by reconciliation
+    VALID_SCAN_CONDITIONS = ["Good", "Bad"]
     VALID_CONDITIONS = ["Good", "Bad", "RMA", "Lost"]
 
     def __init__(self, db: Session):
@@ -56,8 +75,8 @@ class FileService:
             errors.append({"row": 0, "field": "file", "message": f"Could not read file: {str(e)}"})
             return None, errors, warnings
 
-        # Normalize column names
-        df.columns = [self._normalize_column_name(col) for col in df.columns]
+        # Normalize column names and apply aliases
+        df.columns = [self._normalize_audit_column(col) for col in df.columns]
 
         # Check required columns
         missing_cols = [col for col in self.REQUIRED_AUDIT_COLUMNS if col not in df.columns]
@@ -65,7 +84,7 @@ class FileService:
             errors.append({
                 "row": 0,
                 "field": "columns",
-                "message": f"Missing required columns: {', '.join(missing_cols)}"
+                "message": f"Missing required columns: {', '.join(missing_cols)}. Use the template from 'Download Template' button."
             })
             return None, errors, warnings
 
@@ -78,7 +97,7 @@ class FileService:
                 errors.append({
                     "row": row_num,
                     "field": "serial_number",
-                    "message": "Serial number is required"
+                    "message": "Serial number (SN) is required"
                 })
                 continue
 
@@ -98,7 +117,7 @@ class FileService:
                     "message": "Model is required"
                 })
 
-            # Check condition
+            # Check condition - for scanned data, only Good/Bad are valid
             condition = str(row.get("condition", "")).strip()
             if not condition:
                 errors.append({
@@ -106,12 +125,20 @@ class FileService:
                     "field": "condition",
                     "message": "Condition is required"
                 })
-            elif condition not in self.VALID_CONDITIONS:
-                errors.append({
-                    "row": row_num,
-                    "field": "condition",
-                    "message": f"Invalid condition. Must be: {', '.join(self.VALID_CONDITIONS)}"
-                })
+            elif condition not in self.VALID_SCAN_CONDITIONS:
+                # Allow RMA/Lost but warn - these should be determined by reconciliation
+                if condition in self.VALID_CONDITIONS:
+                    warnings.append({
+                        "row": row_num,
+                        "field": "condition",
+                        "message": f"Condition '{condition}' found in scan. RMA/Lost are typically determined by reconciliation."
+                    })
+                else:
+                    errors.append({
+                        "row": row_num,
+                        "field": "condition",
+                        "message": f"Invalid condition. For scanned assets, use: {', '.join(self.VALID_SCAN_CONDITIONS)}"
+                    })
 
         # Check for duplicate serials (warning, not error)
         serial_counts = df["serial_number"].value_counts()
@@ -406,3 +433,9 @@ class FileService:
     def _normalize_column_name(self, col: str) -> str:
         """Normalize column name to snake_case."""
         return str(col).lower().strip().replace(" ", "_").replace("-", "_")
+
+    def _normalize_audit_column(self, col: str) -> str:
+        """Normalize audit column name and apply aliases."""
+        normalized = self._normalize_column_name(col)
+        # Apply alias mapping if available
+        return self.AUDIT_COLUMN_ALIASES.get(normalized, normalized)

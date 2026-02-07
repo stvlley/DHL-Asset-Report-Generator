@@ -13,6 +13,7 @@ import {
   AlertCircle,
   Loader2,
   X,
+  Download,
 } from 'lucide-react'
 
 const uploadSchema = z.object({
@@ -111,11 +112,21 @@ export default function UploadPage() {
   return (
     <div className="max-w-3xl mx-auto space-y-6">
       {/* Page Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Upload Physical Audit</h1>
-        <p className="text-sm text-gray-500 mt-1">
-          Upload your monthly physical audit Excel file for reconciliation
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Upload Physical Audit</h1>
+          <p className="text-sm text-gray-500 mt-1">
+            Upload your monthly physical audit scan data for reconciliation
+          </p>
+        </div>
+        <a
+          href="/api/v1/audits/template/download"
+          className="btn-secondary"
+          download
+        >
+          <Download className="w-4 h-4 mr-2" />
+          Download Template
+        </a>
       </div>
 
       {/* Success Message */}
@@ -248,7 +259,7 @@ export default function UploadPage() {
           {/* File Upload */}
           <div className="card p-6">
             <h2 className="text-lg font-semibold text-gray-900 mb-4">
-              Step 2: Upload Physical Audit File
+              Step 2: Upload Physical Audit Scan
             </h2>
 
             {!file ? (
@@ -293,13 +304,41 @@ export default function UploadPage() {
             )}
 
             <div className="mt-4 p-4 bg-blue-50 rounded-lg">
-              <p className="text-sm font-medium text-blue-800">Required Columns:</p>
-              <ul className="mt-1 text-sm text-blue-700 list-disc list-inside">
-                <li>Serial Number</li>
-                <li>Asset Type</li>
-                <li>Model</li>
-                <li>Condition (Good, Bad, RMA, or Lost)</li>
-              </ul>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-sm font-medium text-blue-800">Required Columns:</p>
+                <a
+                  href="/api/v1/audits/template/download"
+                  className="text-xs text-blue-600 hover:text-blue-800 flex items-center"
+                  download
+                >
+                  <Download className="w-3 h-3 mr-1" />
+                  Get Template
+                </a>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-sm text-blue-700">
+                <div>
+                  <span className="font-medium">SN</span> - Serial Number (scanned)
+                </div>
+                <div>
+                  <span className="font-medium">Asset Number</span> - Internal ID (optional)
+                </div>
+                <div>
+                  <span className="font-medium">Asset Type</span> - Scanner, Printer, etc.
+                </div>
+                <div>
+                  <span className="font-medium">Model</span> - Device model
+                </div>
+                <div>
+                  <span className="font-medium">Condition</span> - Good or Bad
+                </div>
+                <div>
+                  <span className="font-medium">Comment</span> - Notes (optional)
+                </div>
+              </div>
+              <p className="mt-3 text-xs text-blue-600">
+                Note: RMA and Lost items are identified by comparing your scan data against Master Data.
+                Only scan assets physically present at the site.
+              </p>
             </div>
           </div>
 

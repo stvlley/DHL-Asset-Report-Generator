@@ -26,6 +26,60 @@ from app.services.audit_log_service import AuditLogService
 router = APIRouter()
 
 
+@router.get("/template/download")
+async def download_audit_template():
+    """
+    Download the physical audit scan template.
+    This template should be used to upload scanned physical audit data.
+    """
+    # Create template DataFrame with the required columns
+    template_data = {
+        "SN": ["EXAMPLE123456", "EXAMPLE789012"],
+        "Asset Number": ["AST-001", "AST-002"],
+        "Asset Type": ["Scanner", "Printer"],
+        "Model": ["MC9300", "ZT411"],
+        "Condition": ["Good", "Good"],
+        "Comment": ["Located in Zone A", ""],
+    }
+
+    df = pd.DataFrame(template_data)
+
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        df.to_excel(writer, index=False, sheet_name="Audit Scan")
+
+        # Add instructions sheet
+        instructions = pd.DataFrame({
+            "Field": ["SN", "Asset Number", "Asset Type", "Model", "Condition", "Comment"],
+            "Description": [
+                "Serial Number - Scanned from device barcode (Required)",
+                "Internal asset number if available (Optional)",
+                "Device type: Scanner, Printer, Computer, etc. (Required)",
+                "Device model number (Required)",
+                "Physical condition: Good, Bad (Required)",
+                "Additional notes about location or condition (Optional)"
+            ],
+            "Required": ["Yes", "No", "Yes", "Yes", "Yes", "No"],
+            "Valid Values": [
+                "Any alphanumeric string",
+                "Any alphanumeric string",
+                "Scanner, Printer, Computer, Tablet, etc.",
+                "Device model (e.g., MC9300, ZT411, TC52)",
+                "Good, Bad",
+                "Free text"
+            ]
+        })
+        instructions.to_excel(writer, index=False, sheet_name="Instructions")
+
+    output.seek(0)
+
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=physical_audit_template.xlsx"}
+    )
+
+
 @router.post("/upload", response_model=AuditUploadResponse)
 async def upload_audit(
     request: Request,
