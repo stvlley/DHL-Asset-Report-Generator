@@ -4,7 +4,7 @@ CRUD operations for AssetMaster, IT Allocation sync, and SOTI integration.
 """
 from typing import List, Optional
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, File, UploadFile
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
@@ -345,6 +345,88 @@ async def sync_from_it_allocation(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
         )
+
+
+# KLS Workbook Import
+class KLSImportRequest(BaseModel):
+    site_code: str
+    gl_string: str
+
+
+@router.post("/import-kls-workbook")
+async def import_kls_workbook(
+    site_code: str,
+    gl_string: str,
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Import a KLS-style multi-sheet asset audit workbook.
+
+    This imports:
+    - Asset Detail → Master database
+    - IT Allocation Import → Syncs costs and HSN/MAC
+    - PBI Import → Syncs SOTI connection status
+    - Scan Audit → Processes scan statistics
+
+    Requires the Excel file to be uploaded.
+    """
+    import tempfile
+    import os
+    from app.services.kls_import_service import KLSImportService
+
+    auth_service = AuthService(db)
+
+    if not auth_service.check_permission(current_user, "manage_assets"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to import assets"
+        )
+
+    # Save to temp file
+    contents = await file.read()
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
+        tmp.write(contents)
+        tmp_path = tmp.name
+
+    try:
+        service = KLSImportService(db)
+        result = service.import_workbook(
+            tmp_path,
+            site_code,
+            gl_string,
+            current_user.user_id
+        )
+
+        # Get reconciliation summary
+        summary = service.get_reconciliation_summary(site_code)
+
+        return {
+            "status": "success",
+            "import_stats": result,
+            "reconciliation_summary": summary
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    finally:
+        os.unlink(tmp_path)
+
+
+@router.get("/reconciliation-summary/{site_code}")
+async def get_reconciliation_summary(
+    site_code: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get reconciliation summary for a site."""
+    from app.services.kls_import_service import KLSImportService
+
+    service = KLSImportService(db)
+    return service.get_reconciliation_summary(site_code)
 
 
 def _asset_to_response(asset: AssetMaster) -> dict:
