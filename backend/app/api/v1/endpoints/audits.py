@@ -173,7 +173,8 @@ async def upload_audit(
             get_client_ip(request)
         )
 
-        # Refresh to get updated status
+        # Ensure all changes are committed before returning
+        db.commit()
         db.refresh(audit)
 
         return AuditUploadResponse(
