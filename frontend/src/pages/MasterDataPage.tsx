@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useDropzone } from 'react-dropzone'
-import { assetManagementApi, sitesApi } from '../services/api'
+import { assetManagementApi, sitesApi, itAllocationApi } from '../services/api'
 import {
   Database,
   Upload,
@@ -16,24 +16,30 @@ import {
   DollarSign,
   BarChart3,
   RefreshCw,
+  ArrowRight,
+  FileText,
 } from 'lucide-react'
 
 export default function MasterDataPage() {
   const [selectedSite, setSelectedSite] = useState<string>('')
   const [searchTerm, setSearchTerm] = useState('')
-  const [showImport, setShowImport] = useState(false)
-  const [importFile, setImportFile] = useState<File | null>(null)
-  const [glString, setGlString] = useState('61.5851.5531.8233.10.000')
-  const [importResult, setImportResult] = useState<{
+  const [showMdmUpload, setShowMdmUpload] = useState(false)
+  const [mdmFile, setMdmFile] = useState<File | null>(null)
+  const [uploadResult, setUploadResult] = useState<{
     status: 'success' | 'error'
     message: string
-    stats?: unknown
+    stats?: Record<string, number>
   } | null>(null)
   const queryClient = useQueryClient()
 
   const { data: sites } = useQuery({
     queryKey: ['sites'],
     queryFn: () => sitesApi.list(),
+  })
+
+  const { data: snapshots } = useQuery({
+    queryKey: ['it-allocation-snapshots'],
+    queryFn: () => itAllocationApi.listSnapshots(6),
   })
 
   const { data: assetsData, isLoading } = useQuery({
@@ -57,32 +63,53 @@ export default function MasterDataPage() {
     queryFn: () => assetManagementApi.getDisconnected(selectedSite || undefined, 60),
   })
 
-  const importMutation = useMutation({
-    mutationFn: ({ file, siteCode, gl }: { file: File; siteCode: string; gl: string }) =>
-      assetManagementApi.importKLSWorkbook(file, siteCode, gl),
-    onSuccess: (result) => {
-      setImportResult({
-        status: 'success',
-        message: `Import complete: ${result.import_stats.asset_detail.imported} assets imported`,
-        stats: result,
+  // MDM Status Upload
+  const mdmUploadMutation = useMutation({
+    mutationFn: async ({ file, siteCode }: { file: File; siteCode?: string }) => {
+      const formData = new FormData()
+      formData.append('file', file)
+
+      const params = new URLSearchParams()
+      if (siteCode) params.append('site_code', siteCode)
+
+      const response = await fetch(`/api/v1/assets/upload-mdm-status?${params}`, {
+        method: 'POST',
+        body: formData,
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem('access_token') || ''}`,
+        },
       })
-      setImportFile(null)
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.detail || 'Upload failed')
+      }
+
+      return response.json()
+    },
+    onSuccess: (result) => {
+      setUploadResult({
+        status: 'success',
+        message: result.message,
+        stats: result.stats,
+      })
+      setMdmFile(null)
       queryClient.invalidateQueries({ queryKey: ['assets-managed'] })
       queryClient.invalidateQueries({ queryKey: ['reconciliation-summary'] })
       queryClient.invalidateQueries({ queryKey: ['disconnected-devices'] })
     },
     onError: (error: Error) => {
-      setImportResult({
+      setUploadResult({
         status: 'error',
-        message: `Import failed: ${error.message}`,
+        message: error.message,
       })
     },
   })
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     if (acceptedFiles.length > 0) {
-      setImportFile(acceptedFiles[0])
-      setImportResult(null)
+      setMdmFile(acceptedFiles[0])
+      setUploadResult(null)
     }
   }, [])
 
@@ -90,17 +117,20 @@ export default function MasterDataPage() {
     onDrop,
     accept: {
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
+      'application/vnd.ms-excel': ['.xls'],
+      'text/csv': ['.csv'],
     },
     maxFiles: 1,
   })
 
-  const handleImport = () => {
-    if (importFile && selectedSite) {
-      importMutation.mutate({ file: importFile, siteCode: selectedSite, gl: glString })
+  const handleMdmUpload = () => {
+    if (mdmFile) {
+      mdmUploadMutation.mutate({ file: mdmFile, siteCode: selectedSite || undefined })
     }
   }
 
   const assets = assetsData?.items || []
+  const latestSnapshot = snapshots?.[0]
 
   return (
     <div className="space-y-6">
@@ -109,7 +139,7 @@ export default function MasterDataPage() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Master Data</h1>
           <p className="text-sm text-gray-500 mt-1">
-            Asset database with IT Allocation costs and MDM status
+            Asset database built from IT Allocation with MDM connectivity status
           </p>
         </div>
         <div className="flex gap-2">
@@ -120,11 +150,44 @@ export default function MasterDataPage() {
             <RefreshCw className="w-4 h-4 mr-2" />
             Refresh
           </button>
-          <button onClick={() => setShowImport(!showImport)} className="btn-primary">
+          <button
+            onClick={() => setShowMdmUpload(!showMdmUpload)}
+            className="btn-primary"
+          >
             <Upload className="w-4 h-4 mr-2" />
-            Import Workbook
+            Upload MDM Status
           </button>
         </div>
+      </div>
+
+      {/* How It Works */}
+      <div className="card p-4 bg-blue-50 border-blue-200">
+        <h3 className="font-medium text-blue-900 mb-2">How Master Data Works</h3>
+        <div className="flex items-center gap-4 text-sm text-blue-800">
+          <div className="flex items-center">
+            <FileText className="w-5 h-5 mr-2" />
+            <span>IT Allocation Upload</span>
+          </div>
+          <ArrowRight className="w-4 h-4 text-blue-400" />
+          <div className="flex items-center">
+            <Database className="w-5 h-5 mr-2" />
+            <span>Master Database</span>
+          </div>
+          <ArrowRight className="w-4 h-4 text-blue-400" />
+          <div className="flex items-center">
+            <Wifi className="w-5 h-5 mr-2" />
+            <span>MDM Status Overlay</span>
+          </div>
+        </div>
+        <p className="text-xs text-blue-700 mt-2">
+          Master data is automatically built from IT Allocation uploads.
+          Upload MDM/SOTI status separately to track device connectivity.
+          {latestSnapshot && (
+            <span className="ml-1">
+              Latest allocation: Period {latestSnapshot.period}/{latestSnapshot.year}
+            </span>
+          )}
+        </p>
       </div>
 
       {/* Disconnected Devices Alert */}
@@ -137,8 +200,8 @@ export default function MasterDataPage() {
                 {disconnected.count} Device{disconnected.count > 1 ? 's' : ''} Not Connected
               </h3>
               <p className="text-sm text-amber-700 mt-1">
-                These devices haven't connected to MDM in {disconnected.days_threshold}+ days
-                and may require attention.
+                These devices haven't connected to MDM in {disconnected.days_threshold}+ days.
+                They may be lost, damaged, or require investigation.
               </p>
               <div className="mt-2 flex flex-wrap gap-2">
                 {disconnected.devices.slice(0, 5).map((device) => (
@@ -223,78 +286,63 @@ export default function MasterDataPage() {
         </div>
       )}
 
-      {/* Import Section */}
-      {showImport && (
+      {/* MDM Status Upload Section */}
+      {showMdmUpload && (
         <div className="card p-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-4">
-            Import KLS Asset Audit Workbook
+            Upload MDM/SOTI Connection Status
           </h2>
+          <p className="text-sm text-gray-600 mb-4">
+            Upload a simple file from your SOTI or Power BI export with device connection status.
+            This updates the MDM status for matching devices in the master database.
+          </p>
 
-          {importResult && (
+          {uploadResult && (
             <div
               className={`mb-4 p-4 rounded-md flex items-start ${
-                importResult.status === 'success'
+                uploadResult.status === 'success'
                   ? 'bg-green-50 text-green-700'
                   : 'bg-red-50 text-red-700'
               }`}
             >
-              {importResult.status === 'success' ? (
+              {uploadResult.status === 'success' ? (
                 <CheckCircle className="w-5 h-5 mr-2 flex-shrink-0" />
               ) : (
                 <AlertCircle className="w-5 h-5 mr-2 flex-shrink-0" />
               )}
               <div>
-                <p>{importResult.message}</p>
-                {importResult.status === 'success' && importResult.stats && (
-                  <div className="mt-2 text-sm">
-                    <p>
-                      • IT Allocation matched:{' '}
-                      {(importResult.stats as { import_stats: { it_allocation: { matched: number } } }).import_stats.it_allocation.matched}
-                    </p>
-                    <p>
-                      • MDM status synced:{' '}
-                      {(importResult.stats as { import_stats: { pbi_import: { matched: number } } }).import_stats.pbi_import.matched}
-                    </p>
+                <p>{uploadResult.message}</p>
+                {uploadResult.status === 'success' && uploadResult.stats && (
+                  <div className="mt-2 text-sm grid grid-cols-2 gap-2">
+                    <p>Total rows: {uploadResult.stats.total_rows}</p>
+                    <p>Matched: {uploadResult.stats.matched}</p>
+                    <p>Connected: {uploadResult.stats.connected}</p>
+                    <p>Disconnected: {uploadResult.stats.disconnected}</p>
                   </div>
                 )}
               </div>
             </div>
           )}
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Site Code *
-              </label>
-              <select
-                value={selectedSite}
-                onChange={(e) => setSelectedSite(e.target.value)}
-                className="input"
-                required
-              >
-                <option value="">Select Site</option>
-                {sites?.map((site) => (
-                  <option key={site.site_code} value={site.site_code}>
-                    {site.site_code} - {site.site_name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Default GL String
-              </label>
-              <input
-                type="text"
-                value={glString}
-                onChange={(e) => setGlString(e.target.value)}
-                className="input"
-                placeholder="61.5851.5531.8233.10.000"
-              />
-            </div>
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Filter by Site (optional)
+            </label>
+            <select
+              value={selectedSite}
+              onChange={(e) => setSelectedSite(e.target.value)}
+              className="input max-w-xs"
+            >
+              <option value="">All Sites</option>
+              {sites?.map((site) => (
+                <option key={site.site_code} value={site.site_code}>
+                  {site.site_code} - {site.site_name}
+                </option>
+              ))}
+            </select>
           </div>
 
-          {!importFile ? (
+          {!mdmFile ? (
             <div
               {...getRootProps()}
               className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer ${
@@ -304,10 +352,10 @@ export default function MasterDataPage() {
               <input {...getInputProps()} />
               <Upload className="w-10 h-10 mx-auto text-gray-400" />
               <p className="mt-2 text-sm text-gray-600">
-                Drop your KLS Asset Audit workbook here or click to browse
+                Drop your MDM status file here or click to browse
               </p>
               <p className="text-xs text-gray-400 mt-1">
-                Supports multi-sheet Excel files with Asset Detail, IT Allocation, PBI Import
+                Supports CSV or Excel with Serial Number and Status columns
               </p>
             </div>
           ) : (
@@ -315,35 +363,52 @@ export default function MasterDataPage() {
               <div className="flex items-center">
                 <FileSpreadsheet className="w-8 h-8 text-green-500" />
                 <div className="ml-3">
-                  <p className="text-sm font-medium">{importFile.name}</p>
+                  <p className="text-sm font-medium">{mdmFile.name}</p>
                   <p className="text-xs text-gray-500">
-                    {(importFile.size / 1024).toFixed(1)} KB
+                    {(mdmFile.size / 1024).toFixed(1)} KB
                   </p>
                 </div>
               </div>
               <div className="flex gap-2">
-                <button onClick={() => setImportFile(null)} className="btn-secondary">
+                <button onClick={() => setMdmFile(null)} className="btn-secondary">
                   <X className="w-4 h-4" />
                 </button>
                 <button
-                  onClick={handleImport}
-                  disabled={importMutation.isPending || !selectedSite}
+                  onClick={handleMdmUpload}
+                  disabled={mdmUploadMutation.isPending}
                   className="btn-primary"
                 >
-                  {importMutation.isPending ? 'Importing...' : 'Import'}
+                  {mdmUploadMutation.isPending ? 'Uploading...' : 'Upload'}
                 </button>
               </div>
             </div>
           )}
 
-          <div className="mt-4 p-4 bg-blue-50 rounded-lg text-sm text-blue-700">
-            <p className="font-medium">This import will:</p>
-            <ul className="list-disc list-inside mt-1 space-y-1">
-              <li>Import devices from "Asset Detail" sheet as master data</li>
-              <li>Sync monthly costs from "IT Allocation Import" sheet</li>
-              <li>Update MDM status from "PBI Import" sheet</li>
-              <li>Process scan statistics from "Scan Audit" sheet</li>
-            </ul>
+          <div className="mt-4 p-4 bg-gray-50 rounded-lg text-sm">
+            <p className="font-medium text-gray-700">Expected file format:</p>
+            <div className="mt-2 font-mono text-xs bg-white p-3 rounded border overflow-x-auto">
+              <table className="min-w-full">
+                <thead>
+                  <tr className="border-b">
+                    <th className="text-left pr-8 pb-1">Serial Number</th>
+                    <th className="text-left pb-1">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="text-gray-600">
+                  <tr>
+                    <td className="pr-8">23055R0183</td>
+                    <td>Connected in last 60 days</td>
+                  </tr>
+                  <tr>
+                    <td className="pr-8">R52R504E3QA</td>
+                    <td>Not Connected in last 60 days</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p className="mt-2 text-gray-500">
+              Status values: "Connected"/"Disconnected" or "Connected in last 60 days"/"Not Connected in last 60 days"
+            </p>
           </div>
         </div>
       )}
@@ -447,23 +512,31 @@ export default function MasterDataPage() {
                     </td>
                     <td className="px-4 py-3 text-sm">
                       {asset.mdm_enrollment_status === 'enrolled' ? (
-                        <span className="inline-flex items-center px-2 py-1 text-xs font-medium rounded bg-green-100 text-green-700">
-                          <Wifi className="w-3 h-3 mr-1" />
-                          {asset.mdm_days_since_connect === 0
-                            ? 'Connected'
-                            : `${asset.mdm_days_since_connect}d ago`}
-                        </span>
+                        asset.mdm_days_since_connect !== null &&
+                        asset.mdm_days_since_connect >= 60 ? (
+                          <span className="inline-flex items-center px-2 py-1 text-xs font-medium rounded bg-amber-100 text-amber-700">
+                            <WifiOff className="w-3 h-3 mr-1" />
+                            {asset.mdm_days_since_connect}d ago
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center px-2 py-1 text-xs font-medium rounded bg-green-100 text-green-700">
+                            <Wifi className="w-3 h-3 mr-1" />
+                            Connected
+                          </span>
+                        )
                       ) : asset.mdm_enrollment_status === 'not_enrolled' ? (
                         <span className="inline-flex items-center px-2 py-1 text-xs font-medium rounded bg-gray-100 text-gray-600">
                           <WifiOff className="w-3 h-3 mr-1" />
                           Not Enrolled
                         </span>
                       ) : (
-                        <span className="text-xs text-gray-400">-</span>
+                        <span className="text-xs text-gray-400">No MDM data</span>
                       )}
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-500">
-                      {asset.cost_per_month ? `$${Number(asset.cost_per_month).toFixed(2)}` : '-'}
+                      {asset.cost_per_month
+                        ? `$${Number(asset.cost_per_month).toFixed(2)}`
+                        : '-'}
                     </td>
                   </tr>
                 ))}
@@ -475,8 +548,11 @@ export default function MasterDataPage() {
             <Database className="w-12 h-12 mx-auto text-gray-400" />
             <p className="mt-4 text-sm text-gray-500">
               {selectedSite
-                ? 'No assets found for this site. Import a workbook to get started.'
-                : 'Select a site to view assets or import a workbook.'}
+                ? 'No assets found for this site.'
+                : 'Select a site to view assets.'}
+            </p>
+            <p className="mt-2 text-xs text-gray-400">
+              Master data is built from IT Allocation uploads. Go to the IT Allocation page to upload billing data.
             </p>
           </div>
         )}

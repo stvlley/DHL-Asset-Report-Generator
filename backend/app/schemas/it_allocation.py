@@ -51,6 +51,14 @@ class ITAllocationSnapshotDetail(ITAllocationSnapshotResponse):
     devices: List[ITAllocationDeviceResponse] = []
 
 
+class MasterSyncResult(BaseModel):
+    """Result of syncing IT Allocation to master data."""
+    created: int = 0
+    updated: int = 0
+    total: int = 0
+    error: Optional[str] = None
+
+
 class ITAllocationUploadResponse(BaseModel):
     status: str
     snapshot_id: str
@@ -62,6 +70,7 @@ class ITAllocationUploadResponse(BaseModel):
     unique_gl_strings: int
     parsing_errors: List[dict] = []
     categories_found: List[str] = []  # All unique categories in the file
+    master_sync: Optional[MasterSyncResult] = None  # Auto-sync to master data result
 
 
 class SiteGLMappingBase(BaseModel):

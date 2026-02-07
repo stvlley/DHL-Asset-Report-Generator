@@ -423,10 +423,78 @@ async def get_reconciliation_summary(
     db: Session = Depends(get_db)
 ):
     """Get reconciliation summary for a site."""
-    from app.services.kls_import_service import KLSImportService
-
-    service = KLSImportService(db)
+    service = MasterDataService(db)
     return service.get_reconciliation_summary(site_code)
+
+
+@router.post("/upload-mdm-status")
+async def upload_mdm_status(
+    file: UploadFile = File(...),
+    site_code: Optional[str] = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Upload MDM/SOTI connection status from a simple file.
+
+    Accepts CSV or Excel with two required columns:
+    - Serial Number (or SN, Serial, Device ID)
+    - Status (or Connection Status, MDM Status)
+      Values: "Connected in last 60 days" / "Not Connected in last 60 days"
+              or simply "Connected" / "Disconnected"
+
+    This is a simple alternative to the complex KLS workbook import.
+    Sites can export their SOTI/PBI report and upload it directly.
+    """
+    import tempfile
+    import os
+
+    auth_service = AuthService(db)
+
+    if not auth_service.check_permission(current_user, "manage_assets"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to upload MDM status"
+        )
+
+    # Determine file type
+    filename = file.filename.lower() if file.filename else ""
+    if filename.endswith('.csv'):
+        suffix = ".csv"
+    else:
+        suffix = ".xlsx"
+
+    # Save to temp file
+    contents = await file.read()
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+        tmp.write(contents)
+        tmp_path = tmp.name
+
+    try:
+        service = MasterDataService(db)
+        result = service.upload_mdm_status(
+            tmp_path,
+            site_code,
+            current_user.user_id
+        )
+
+        return {
+            "status": "success",
+            "message": f"Updated {result['matched']} devices ({result['connected']} connected, {result['disconnected']} disconnected)",
+            "stats": result
+        }
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Error processing file: {str(e)}"
+        )
+    finally:
+        os.unlink(tmp_path)
 
 
 def _asset_to_response(asset: AssetMaster) -> dict:

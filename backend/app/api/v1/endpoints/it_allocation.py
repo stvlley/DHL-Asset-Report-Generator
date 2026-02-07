@@ -12,6 +12,7 @@ from app.core.database import get_db
 from app.api.v1.endpoints.auth import get_current_user
 from app.models.user import User, UserRole
 from app.services.it_allocation_service import ITAllocationService
+from app.services.master_data_service import MasterDataService
 from app.schemas.it_allocation import (
     ITAllocationUploadResponse,
     ITAllocationSnapshotResponse,
@@ -81,6 +82,23 @@ async def upload_it_allocation(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=result.message
             )
+
+        # Auto-sync to master data
+        if result.snapshot_id:
+            try:
+                master_service = MasterDataService(db)
+                sync_result = master_service.sync_from_it_allocation(
+                    snapshot_id=result.snapshot_id,
+                    user_id=current_user.user_id
+                )
+                result.master_sync = {
+                    "created": sync_result.get("created", 0),
+                    "updated": sync_result.get("updated", 0),
+                    "total": sync_result.get("total_devices", 0)
+                }
+            except Exception as e:
+                # Don't fail the upload if master sync fails
+                result.master_sync = {"error": str(e)}
 
         return result
 

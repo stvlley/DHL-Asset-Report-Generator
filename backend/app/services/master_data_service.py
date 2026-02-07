@@ -458,6 +458,157 @@ class MasterDataService:
 
         return query.order_by(AssetMaster.mdm_days_since_connect.desc()).all()
 
+    def upload_mdm_status(
+        self,
+        file_path: str,
+        site_code: Optional[str] = None,
+        user_id: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Upload MDM/SOTI connection status from a simple file.
+
+        Expects CSV or Excel with columns:
+        - Serial Number (or SN, Serial, Device ID)
+        - Status (or Connection Status, MDM Status)
+        - Model (optional)
+
+        Args:
+            file_path: Path to the uploaded file
+            site_code: Optional filter to only update assets at this site
+            user_id: User performing the upload
+
+        Returns:
+            Upload statistics
+        """
+        import pandas as pd
+
+        # Read file
+        if file_path.endswith('.csv'):
+            df = pd.read_csv(file_path)
+        else:
+            df = pd.read_excel(file_path)
+
+        # Normalize column names
+        df.columns = df.columns.str.strip().str.lower()
+
+        # Find serial number column
+        serial_col = None
+        for col in ['serial number', 'sn', 'serial', 'device id', 'serialnumber', 'hsn']:
+            if col in df.columns:
+                serial_col = col
+                break
+
+        if not serial_col:
+            raise ValueError("Could not find serial number column. Expected: Serial Number, SN, Serial, or Device ID")
+
+        # Find status column
+        status_col = None
+        for col in ['status', 'connection status', 'mdm status', 'connectionstatus', 'mdmstatus']:
+            if col in df.columns:
+                status_col = col
+                break
+
+        if not status_col:
+            raise ValueError("Could not find status column. Expected: Status, Connection Status, or MDM Status")
+
+        stats = {
+            "total_rows": len(df),
+            "matched": 0,
+            "unmatched": 0,
+            "connected": 0,
+            "disconnected": 0,
+            "errors": []
+        }
+
+        for idx, row in df.iterrows():
+            try:
+                serial = str(row[serial_col]).strip()
+                if not serial or serial == 'nan' or serial.lower() == serial_col:
+                    continue
+
+                status_raw = str(row[status_col]).strip().lower()
+
+                # Determine connection status
+                is_connected = (
+                    'connected in last' in status_raw or
+                    status_raw == 'connected' or
+                    status_raw == 'online' or
+                    status_raw == 'active'
+                ) and 'not connected' not in status_raw
+
+                # Find matching asset
+                query = self.db.query(AssetMaster).filter(
+                    AssetMaster.is_deleted == False,
+                    or_(
+                        AssetMaster.serial_number == serial,
+                        AssetMaster.hsn == serial
+                    )
+                )
+
+                if site_code:
+                    query = query.filter(AssetMaster.assigned_site_code == site_code)
+
+                asset = query.first()
+
+                if asset:
+                    asset.mdm_enrollment_status = MDMEnrollmentStatus.ENROLLED.value
+                    asset.mdm_days_since_connect = 0 if is_connected else 60
+                    asset.mdm_last_sync = datetime.now(timezone.utc)
+                    asset.updated_at = datetime.now(timezone.utc)
+                    asset.updated_by = user_id
+
+                    stats["matched"] += 1
+                    if is_connected:
+                        stats["connected"] += 1
+                    else:
+                        stats["disconnected"] += 1
+                else:
+                    stats["unmatched"] += 1
+
+            except Exception as e:
+                stats["errors"].append({"row": idx + 2, "error": str(e)})
+
+        self.db.commit()
+        return stats
+
+    def get_reconciliation_summary(self, site_code: str) -> Dict[str, Any]:
+        """Get reconciliation summary showing data coverage across sources."""
+        assets = self.db.query(AssetMaster).filter(
+            AssetMaster.assigned_site_code == site_code,
+            AssetMaster.is_deleted == False
+        ).all()
+
+        total = len(assets)
+        with_billing = sum(1 for a in assets if a.cost_per_month and float(a.cost_per_month) > 0)
+        with_mdm = sum(1 for a in assets if a.mdm_enrollment_status != MDMEnrollmentStatus.UNKNOWN.value)
+        disconnected_60 = sum(1 for a in assets if a.mdm_days_since_connect and a.mdm_days_since_connect >= 60)
+
+        monthly_cost = sum(float(a.cost_per_month or 0) for a in assets)
+
+        by_condition = {}
+        for a in assets:
+            cond = a.recorded_condition or "Unknown"
+            by_condition[cond] = by_condition.get(cond, 0) + 1
+
+        by_type = {}
+        for a in assets:
+            atype = a.asset_type or "Unknown"
+            by_type[atype] = by_type.get(atype, 0) + 1
+
+        return {
+            "site_code": site_code,
+            "total_assets": total,
+            "with_billing_data": with_billing,
+            "without_billing_data": total - with_billing,
+            "with_mdm_status": with_mdm,
+            "without_mdm_status": total - with_mdm,
+            "mdm_disconnected_60_days": disconnected_60,
+            "total_monthly_cost": round(monthly_cost, 2),
+            "total_annual_cost": round(monthly_cost * 12, 2),
+            "by_condition": by_condition,
+            "by_asset_type": by_type
+        }
+
     def get_master_stats(self, site_code: Optional[str] = None) -> Dict[str, Any]:
         """Get summary statistics for master data."""
         query = self.db.query(AssetMaster).filter(AssetMaster.is_deleted == False)

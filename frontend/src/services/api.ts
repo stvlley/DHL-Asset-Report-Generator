@@ -471,6 +471,35 @@ export const assetManagementApi = {
   delete: async (assetId: string, hardDelete: boolean = false): Promise<void> => {
     await api.delete(`/assets/${assetId}`, { params: { hard_delete: hardDelete } })
   },
+
+  uploadMdmStatus: async (
+    file: File,
+    siteCode?: string
+  ): Promise<{
+    status: string
+    message: string
+    stats: {
+      total_rows: number
+      matched: number
+      unmatched: number
+      connected: number
+      disconnected: number
+      errors: { row: number; error: string }[]
+    }
+  }> => {
+    const formData = new FormData()
+    formData.append('file', file)
+
+    const params = new URLSearchParams()
+    if (siteCode) params.append('site_code', siteCode)
+
+    const response = await api.post(
+      `/assets/upload-mdm-status?${params}`,
+      formData,
+      { headers: { 'Content-Type': 'multipart/form-data' } }
+    )
+    return response.data
+  },
 }
 
 // Settings API
