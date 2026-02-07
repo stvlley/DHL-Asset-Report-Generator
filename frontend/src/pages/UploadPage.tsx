@@ -305,7 +305,7 @@ export default function UploadPage() {
 
             <div className="mt-4 p-4 bg-blue-50 rounded-lg">
               <div className="flex items-center justify-between mb-2">
-                <p className="text-sm font-medium text-blue-800">Required Columns:</p>
+                <p className="text-sm font-medium text-blue-800">Template Columns:</p>
                 <a
                   href="/api/v1/audits/template/download"
                   className="text-xs text-blue-600 hover:text-blue-800 flex items-center"
@@ -315,29 +315,27 @@ export default function UploadPage() {
                   Get Template
                 </a>
               </div>
-              <div className="grid grid-cols-2 gap-2 text-sm text-blue-700">
-                <div>
-                  <span className="font-medium">SN</span> - Serial Number (scanned)
+              <div className="space-y-1 text-sm text-blue-700">
+                <div className="flex items-center gap-2">
+                  <span className="font-medium w-28">SN</span>
+                  <span>Serial Number (scanned) - use this OR Asset Number</span>
                 </div>
-                <div>
-                  <span className="font-medium">Asset Number</span> - Internal ID (optional)
+                <div className="flex items-center gap-2">
+                  <span className="font-medium w-28">Asset Number</span>
+                  <span>Asset tag if SN not available - use this OR SN</span>
                 </div>
-                <div>
-                  <span className="font-medium">Asset Type</span> - Scanner, Printer, etc.
+                <div className="flex items-center gap-2">
+                  <span className="font-medium w-28">Condition</span>
+                  <span>Good or Bad (required)</span>
                 </div>
-                <div>
-                  <span className="font-medium">Model</span> - Device model
-                </div>
-                <div>
-                  <span className="font-medium">Condition</span> - Good or Bad
-                </div>
-                <div>
-                  <span className="font-medium">Comment</span> - Notes (optional)
+                <div className="flex items-center gap-2">
+                  <span className="font-medium w-28">Comment</span>
+                  <span>Location notes (optional)</span>
                 </div>
               </div>
-              <p className="mt-3 text-xs text-blue-600">
-                Note: RMA and Lost items are identified by comparing your scan data against Master Data.
-                Only scan assets physically present at the site.
+              <p className="mt-3 text-xs text-blue-600 bg-blue-100 p-2 rounded">
+                Asset Type and Model are automatically looked up from IT Allocation data.
+                RMA and Lost items are identified by comparing scan data against Master Data.
               </p>
             </div>
           </div>

@@ -32,14 +32,13 @@ async def download_audit_template():
     Download the physical audit scan template.
     This template should be used to upload scanned physical audit data.
     """
-    # Create template DataFrame with the required columns
+    # Create template DataFrame with minimal required columns
+    # Asset Type and Model are looked up from IT Allocation data
     template_data = {
-        "SN": ["EXAMPLE123456", "EXAMPLE789012"],
-        "Asset Number": ["AST-001", "AST-002"],
-        "Asset Type": ["Scanner", "Printer"],
-        "Model": ["MC9300", "ZT411"],
-        "Condition": ["Good", "Good"],
-        "Comment": ["Located in Zone A", ""],
+        "SN": ["22351830501754", "22351830501755", ""],
+        "Asset Number": ["", "", "AST-00123"],
+        "Condition": ["Good", "Bad", "Good"],
+        "Comment": ["Zone A - Receiving", "Screen cracked", "Zone B"],
     }
 
     df = pd.DataFrame(template_data)
@@ -50,23 +49,25 @@ async def download_audit_template():
 
         # Add instructions sheet
         instructions = pd.DataFrame({
-            "Field": ["SN", "Asset Number", "Asset Type", "Model", "Condition", "Comment"],
+            "Field": ["SN", "Asset Number", "Condition", "Comment"],
             "Description": [
-                "Serial Number - Scanned from device barcode (Required)",
-                "Internal asset number if available (Optional)",
-                "Device type: Scanner, Printer, Computer, etc. (Required)",
-                "Device model number (Required)",
-                "Physical condition: Good, Bad (Required)",
+                "Serial Number - Scanned from device barcode. Use this OR Asset Number.",
+                "Internal asset tag if SN not available. Use this OR SN.",
+                "Physical condition of the device (Required)",
                 "Additional notes about location or condition (Optional)"
             ],
-            "Required": ["Yes", "No", "Yes", "Yes", "Yes", "No"],
+            "Required": ["Yes*", "Yes*", "Yes", "No"],
             "Valid Values": [
-                "Any alphanumeric string",
-                "Any alphanumeric string",
-                "Scanner, Printer, Computer, Tablet, etc.",
-                "Device model (e.g., MC9300, ZT411, TC52)",
+                "Alphanumeric (e.g., 22351830501754)",
+                "Alphanumeric (e.g., AST-00123)",
                 "Good, Bad",
                 "Free text"
+            ],
+            "Notes": [
+                "*Either SN or Asset Number required",
+                "*Either SN or Asset Number required",
+                "Asset Type & Model auto-populated from IT Allocation",
+                "Location, damage notes, etc."
             ]
         })
         instructions.to_excel(writer, index=False, sheet_name="Instructions")

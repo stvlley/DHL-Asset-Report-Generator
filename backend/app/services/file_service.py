@@ -24,6 +24,8 @@ class FileService:
         "serial": "serial_number",
         "serial_number": "serial_number",
         "asset_number": "asset_number",
+        "asset_tag": "asset_number",
+        "tag": "asset_number",
         "asset_type": "asset_type",
         "type": "asset_type",
         "model": "model",
@@ -35,7 +37,9 @@ class FileService:
         "location_notes": "location_notes",
     }
 
-    REQUIRED_AUDIT_COLUMNS = ["serial_number", "asset_type", "model", "condition"]
+    # Only condition is truly required - need at least SN or Asset Number for identification
+    REQUIRED_AUDIT_COLUMNS = ["condition"]
+    IDENTIFIER_COLUMNS = ["serial_number", "asset_number"]  # Need at least one
     REQUIRED_MASTER_COLUMNS = [
         "serial_number", "asset_type", "model", "assigned_site_code", "gl_string"
     ]
@@ -61,6 +65,8 @@ class FileService:
         """
         Parse physical audit Excel/CSV file.
         Returns (dataframe, errors, warnings).
+        Only requires SN or Asset Number + Condition.
+        Asset Type and Model are looked up from IT Allocation.
         """
         errors = []
         warnings = []
@@ -78,13 +84,23 @@ class FileService:
         # Normalize column names and apply aliases
         df.columns = [self._normalize_audit_column(col) for col in df.columns]
 
-        # Check required columns
-        missing_cols = [col for col in self.REQUIRED_AUDIT_COLUMNS if col not in df.columns]
-        if missing_cols:
+        # Check for condition column (required)
+        if "condition" not in df.columns:
             errors.append({
                 "row": 0,
                 "field": "columns",
-                "message": f"Missing required columns: {', '.join(missing_cols)}. Use the template from 'Download Template' button."
+                "message": "Missing required column: Condition. Use the template from 'Download Template' button."
+            })
+            return None, errors, warnings
+
+        # Check for at least one identifier column (SN or Asset Number)
+        has_sn = "serial_number" in df.columns
+        has_asset_num = "asset_number" in df.columns
+        if not has_sn and not has_asset_num:
+            errors.append({
+                "row": 0,
+                "field": "columns",
+                "message": "Missing identifier column. Need either 'SN' or 'Asset Number'. Use the template from 'Download Template' button."
             })
             return None, errors, warnings
 
@@ -92,30 +108,17 @@ class FileService:
         for idx, row in df.iterrows():
             row_num = idx + 2  # Account for header and 0-index
 
-            # Check serial number
-            if pd.isna(row.get("serial_number")) or str(row["serial_number"]).strip() == "":
+            # Check that at least one identifier is present
+            sn = str(row.get("serial_number", "")).strip() if has_sn else ""
+            asset_num = str(row.get("asset_number", "")).strip() if has_asset_num else ""
+
+            if not sn and not asset_num:
                 errors.append({
                     "row": row_num,
-                    "field": "serial_number",
-                    "message": "Serial number (SN) is required"
+                    "field": "identifier",
+                    "message": "Either SN or Asset Number is required"
                 })
                 continue
-
-            # Check asset type
-            if pd.isna(row.get("asset_type")) or str(row["asset_type"]).strip() == "":
-                errors.append({
-                    "row": row_num,
-                    "field": "asset_type",
-                    "message": "Asset type is required"
-                })
-
-            # Check model
-            if pd.isna(row.get("model")) or str(row["model"]).strip() == "":
-                errors.append({
-                    "row": row_num,
-                    "field": "model",
-                    "message": "Model is required"
-                })
 
             # Check condition - for scanned data, only Good/Bad are valid
             condition = str(row.get("condition", "")).strip()
@@ -141,14 +144,18 @@ class FileService:
                     })
 
         # Check for duplicate serials (warning, not error)
-        serial_counts = df["serial_number"].value_counts()
-        duplicates = serial_counts[serial_counts > 1]
-        for serial, count in duplicates.items():
-            warnings.append({
-                "row": 0,
-                "field": "serial_number",
-                "message": f"Serial '{serial}' appears {count} times in file"
-            })
+        if has_sn and "serial_number" in df.columns:
+            # Filter out empty serials before counting
+            non_empty_serials = df[df["serial_number"].notna() & (df["serial_number"].astype(str).str.strip() != "")]
+            if len(non_empty_serials) > 0:
+                serial_counts = non_empty_serials["serial_number"].value_counts()
+                duplicates = serial_counts[serial_counts > 1]
+                for serial, count in duplicates.items():
+                    warnings.append({
+                        "row": 0,
+                        "field": "serial_number",
+                        "message": f"Serial '{serial}' appears {count} times in file"
+                    })
 
         return df, errors, warnings
 
@@ -160,25 +167,54 @@ class FileService:
         """
         Process validated audit dataframe and create audit details.
         Returns count of records created.
+        Asset type and model are optional - will be populated from IT Allocation during reconciliation.
         """
         # Track serials for duplicate detection
-        seen_serials: Dict[str, int] = {}
+        seen_identifiers: Dict[str, int] = {}
         created = 0
+
+        has_sn = "serial_number" in df.columns
+        has_asset_num = "asset_number" in df.columns
+        has_asset_type = "asset_type" in df.columns
+        has_model = "model" in df.columns
 
         for idx, row in df.iterrows():
             row_num = idx + 2
-            serial = str(row["serial_number"]).strip()
+
+            # Get identifier - prefer SN, fall back to asset_number
+            serial = ""
+            asset_number = ""
+
+            if has_sn and not pd.isna(row.get("serial_number")):
+                serial = str(row["serial_number"]).strip()
+            if has_asset_num and not pd.isna(row.get("asset_number")):
+                asset_number = str(row["asset_number"]).strip()
+
+            # Use the primary identifier for duplicate checking
+            identifier = serial if serial else asset_number
+            if not identifier:
+                continue  # Skip rows without any identifier
 
             # Check for duplicate
-            is_duplicate = serial in seen_serials
-            duplicate_of = seen_serials.get(serial)
+            is_duplicate = identifier in seen_identifiers
+            duplicate_of = seen_identifiers.get(identifier)
+
+            # Get optional fields
+            asset_type = ""
+            if has_asset_type and not pd.isna(row.get("asset_type")):
+                asset_type = str(row["asset_type"]).strip()
+
+            model = ""
+            if has_model and not pd.isna(row.get("model")):
+                model = str(row["model"]).strip()
 
             detail = AuditDetail(
                 audit_id=audit.audit_id,
                 row_number=row_num,
-                serial_number=serial,
-                asset_type=str(row["asset_type"]).strip(),
-                model=str(row["model"]).strip(),
+                serial_number=serial if serial else None,
+                asset_number=asset_number if asset_number else None,
+                asset_type=asset_type if asset_type else None,
+                model=model if model else None,
                 physical_condition=str(row["condition"]).strip(),
                 location_notes=str(row.get("location_notes", "")).strip() or None,
                 is_duplicate=is_duplicate,
@@ -189,7 +225,7 @@ class FileService:
             created += 1
 
             if not is_duplicate:
-                seen_serials[serial] = row_num
+                seen_identifiers[identifier] = row_num
 
         audit.total_assets_found = len(df)
         self.db.commit()

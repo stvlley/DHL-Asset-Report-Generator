@@ -52,10 +52,16 @@ class AuditDetail(Base):
     detail_id = Column(Integer, primary_key=True, autoincrement=True)
     audit_id = Column(String(36), ForeignKey("audit_submissions.audit_id", ondelete="CASCADE"), nullable=False, index=True)
     row_number = Column(Integer)  # Original row in uploaded file
-    serial_number = Column(String(50), nullable=False, index=True)
-    asset_type = Column(String(50), nullable=False)
-    model = Column(String(50), nullable=False)
-    physical_condition = Column(String(20), nullable=False)  # Good/Bad/RMA/Lost
+
+    # Identifiers - need at least one (SN or Asset Number)
+    serial_number = Column(String(50), nullable=True, index=True)
+    asset_number = Column(String(50), nullable=True, index=True)
+
+    # Device details - optional, populated from IT Allocation during reconciliation
+    asset_type = Column(String(50), nullable=True)
+    model = Column(String(100), nullable=True)
+
+    physical_condition = Column(String(20), nullable=False)  # Good/Bad
     location_notes = Column(Text, nullable=True)
 
     # Critical fix: Flag for duplicate detection instead of unique constraint
@@ -67,4 +73,5 @@ class AuditDetail(Base):
 
     __table_args__ = (
         Index("idx_audit_details_audit_serial", "audit_id", "serial_number"),
+        Index("idx_audit_details_asset_number", "audit_id", "asset_number"),
     )
