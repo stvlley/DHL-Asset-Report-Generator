@@ -66,7 +66,7 @@ async def get_asset(
 ):
     """Get asset by ID."""
     asset = db.query(AssetMaster).filter(
-        AssetMaster.asset_id == asset_id,
+        AssetMaster.asset_id == str(asset_id),
         AssetMaster.is_deleted == False
     ).first()
 
@@ -152,7 +152,7 @@ async def update_asset(
         )
 
     asset = db.query(AssetMaster).filter(
-        AssetMaster.asset_id == asset_id,
+        AssetMaster.asset_id == str(asset_id),
         AssetMaster.is_deleted == False
     ).first()
 
@@ -189,7 +189,7 @@ async def delete_asset(
         )
 
     asset = db.query(AssetMaster).filter(
-        AssetMaster.asset_id == asset_id,
+        AssetMaster.asset_id == str(asset_id),
         AssetMaster.is_deleted == False
     ).first()
 
