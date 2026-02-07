@@ -19,9 +19,8 @@ from app.schemas.it_allocation import (
 class ITAllocationService:
     """Service for processing IT Allocation data."""
 
-    # Categories to extract (RF Hardware and Software) - case insensitive matching
-    RF_CATEGORIES = ["RF HARDWARE", "RF SOFTWARE", "RF-HARDWARE", "RF-SOFTWARE",
-                     "RFHARDWARE", "RFSOFTWARE", "RF_HARDWARE", "RF_SOFTWARE"]
+    # RF categories for special counting
+    RF_CATEGORIES = ["RFHARDWARE", "RFSOFTWARE"]
 
     # Regex patterns for extracting device info from Detail2(PRJ.) field
     HSN_PATTERN = re.compile(r'HSN[:\s]*(\d+)', re.IGNORECASE)
@@ -99,15 +98,14 @@ class ITAllocationService:
                 parsing_errors=[{"error": "Missing Category column"}]
             )
 
-        # Filter to RF categories only (normalized matching)
-        rf_normalized = ["RFHARDWARE", "RFSOFTWARE"]
-        rf_df = df[df["_category_normalized"].isin(rf_normalized)]
-
+        # Process ALL rows (not just RF categories)
         rf_hardware_count = 0
         rf_software_count = 0
+        other_category_count = 0
         devices_added = set()  # Track unique HSN/MAC combinations
+        rows_processed = 0
 
-        for idx, row in rf_df.iterrows():
+        for idx, row in df.iterrows():
             try:
                 device = self._parse_device_row(row, snapshot.snapshot_id)
                 if device:
@@ -117,11 +115,16 @@ class ITAllocationService:
                         devices_added.add(device_key)
 
                     self.db.add(device)
+                    rows_processed += 1
 
-                    if row["Category"] == "RF HARDWARE":
+                    # Count by category
+                    category_normalized = row.get("_category_normalized", "")
+                    if category_normalized == "RFHARDWARE":
                         rf_hardware_count += 1
-                    else:
+                    elif category_normalized == "RFSOFTWARE":
                         rf_software_count += 1
+                    else:
+                        other_category_count += 1
 
             except Exception as e:
                 errors.append({
@@ -136,7 +139,7 @@ class ITAllocationService:
         self.db.commit()
 
         # Get unique GL strings
-        unique_gl = rf_df["GL String"].nunique() if "GL String" in rf_df.columns else 0
+        unique_gl = df["GL String"].nunique() if "GL String" in df.columns else 0
 
         # Get all unique categories in the file for debugging
         all_categories = df["Category"].dropna().unique().tolist() if "Category" in df.columns else []
@@ -144,7 +147,7 @@ class ITAllocationService:
         return ITAllocationUploadResponse(
             status="success",
             snapshot_id=str(snapshot.snapshot_id),
-            message=f"Successfully processed {rf_hardware_count + rf_software_count} RF devices",
+            message=f"Successfully processed {rows_processed} records ({rf_hardware_count} RF HW, {rf_software_count} RF SW, {other_category_count} other)",
             total_records=len(df),
             rf_hardware_count=rf_hardware_count,
             rf_software_count=rf_software_count,
@@ -156,30 +159,29 @@ class ITAllocationService:
 
     def _parse_device_row(self, row: pd.Series, snapshot_id: str) -> Optional[ITAllocationDevice]:
         """Parse a single row into an ITAllocationDevice."""
-        detail2 = str(row.get("Detail2(PRJ.)", ""))
+        detail2 = str(row.get("Detail2(PRJ.)", "")) if pd.notna(row.get("Detail2(PRJ.)")) else ""
 
-        # Extract HSN and MAC
+        # Extract HSN and MAC if present
         hsn_match = self.HSN_PATTERN.search(detail2)
         mac_match = self.MAC_PATTERN.search(detail2)
 
         hsn = hsn_match.group(1) if hsn_match else None
         mac = mac_match.group(1) if mac_match else None
 
-        # Skip if no identifiers
-        if not hsn and not mac:
-            return None
-
         # Parse GL string components
-        gl_string = str(row.get("GL String", ""))
+        gl_string = str(row.get("GL String", "")) if pd.notna(row.get("GL String")) else ""
         gl_parts = gl_string.split(".") if gl_string else []
+
+        # Get Detail1 value
+        detail1 = str(row.get("Detail1(UserVendor)", "")).strip() if pd.notna(row.get("Detail1(UserVendor)")) else ""
 
         return ITAllocationDevice(
             snapshot_id=snapshot_id,
             hsn=hsn,
             mac_address=mac,
-            device_model=str(row.get("Detail1(UserVendor)", "")).strip(),
+            device_model=detail1,
             gl_string=gl_string,
-            category=str(row.get("Category", "")),
+            category=str(row.get("Category", "")) if pd.notna(row.get("Category")) else "",
             amount=float(row.get("Amount", 0) or 0),
             gl_company=gl_parts[0] if len(gl_parts) > 0 else None,
             gl_cost_center=gl_parts[1] if len(gl_parts) > 1 else None,
@@ -187,7 +189,7 @@ class ITAllocationService:
             gl_account=gl_parts[3] if len(gl_parts) > 3 else None,
             gl_activity=gl_parts[4] if len(gl_parts) > 4 else None,
             gl_sub_account=gl_parts[5] if len(gl_parts) > 5 else None,
-            raw_detail1=str(row.get("Detail1(UserVendor)", "")),
+            raw_detail1=detail1,
             raw_detail2=detail2
         )
 
