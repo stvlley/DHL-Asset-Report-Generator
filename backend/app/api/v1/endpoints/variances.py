@@ -29,7 +29,7 @@ async def get_variance(
 ):
     """Get variance by ID."""
     variance = db.query(Variance).filter(
-        Variance.variance_id == variance_id
+        Variance.variance_id == str(variance_id)
     ).first()
 
     if not variance:
@@ -49,7 +49,7 @@ async def get_email_template(
 ):
     """Get pre-filled email template for variance."""
     variance = db.query(Variance).filter(
-        Variance.variance_id == variance_id
+        Variance.variance_id == str(variance_id)
     ).first()
 
     if not variance:
@@ -77,7 +77,7 @@ async def update_variance_status(
     audit_log = AuditLogService(db)
 
     variance = db.query(Variance).filter(
-        Variance.variance_id == variance_id
+        Variance.variance_id == str(variance_id)
     ).first()
 
     if not variance:
@@ -136,7 +136,7 @@ async def add_variance_note(
 ):
     """Add resolution note to variance."""
     variance = db.query(Variance).filter(
-        Variance.variance_id == variance_id
+        Variance.variance_id == str(variance_id)
     ).first()
 
     if not variance:
@@ -172,7 +172,7 @@ async def list_audit_variances(
     db: Session = Depends(get_db)
 ):
     """List variances for an audit with optional filters."""
-    query = db.query(Variance).filter(Variance.audit_id == audit_id)
+    query = db.query(Variance).filter(Variance.audit_id == str(audit_id))
 
     if variance_type:
         query = query.filter(Variance.variance_type == variance_type)
@@ -194,7 +194,7 @@ async def get_variance_summary(
     reconciliation = ReconciliationService(db)
 
     try:
-        return reconciliation.calculate_variance_summary(audit_id)
+        return reconciliation.calculate_variance_summary(str(audit_id))
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -216,7 +216,7 @@ async def bulk_update_variances(
     audit_log = AuditLogService(db)
 
     audit = db.query(AuditSubmission).filter(
-        AuditSubmission.audit_id == audit_id
+        AuditSubmission.audit_id == str(audit_id)
     ).first()
 
     if not audit:
@@ -234,8 +234,8 @@ async def bulk_update_variances(
     updated = 0
     for variance_id in variance_ids:
         variance = db.query(Variance).filter(
-            Variance.variance_id == variance_id,
-            Variance.audit_id == audit_id
+            Variance.variance_id == str(variance_id),
+            Variance.audit_id == str(audit_id)
         ).first()
 
         if variance:

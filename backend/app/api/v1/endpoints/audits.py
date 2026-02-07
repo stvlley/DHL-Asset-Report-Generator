@@ -208,7 +208,7 @@ async def upload_mdm_data(
     file_service = FileService(db)
 
     audit = db.query(AuditSubmission).filter(
-        AuditSubmission.audit_id == audit_id
+        AuditSubmission.audit_id == str(audit_id)
     ).first()
 
     if not audit:
@@ -228,14 +228,14 @@ async def upload_mdm_data(
         )
 
     # Process MDM upload
-    snapshot = file_service.process_mdm_upload(df, audit_id, file.filename)
+    snapshot = file_service.process_mdm_upload(df, str(audit_id), file.filename)
 
     # Re-run reconciliation with MDM data
     reconciliation = ReconciliationService(db)
     # Clear existing MDM-related variances
     from app.models.variance import Variance, VarianceType
     db.query(Variance).filter(
-        Variance.audit_id == audit_id,
+        Variance.audit_id == str(audit_id),
         Variance.variance_type.in_([
             VarianceType.MDM_NOT_ENROLLED,
             VarianceType.MDM_INACTIVE_WARNING
@@ -244,7 +244,7 @@ async def upload_mdm_data(
     db.commit()
 
     # Re-run to add MDM checks
-    reconciliation.reconcile_audit(audit_id)
+    reconciliation.reconcile_audit(str(audit_id))
 
     return {
         "status": "success",
@@ -291,7 +291,7 @@ async def get_audit(
 ):
     """Get audit by ID."""
     audit = db.query(AuditSubmission).filter(
-        AuditSubmission.audit_id == audit_id
+        AuditSubmission.audit_id == str(audit_id)
     ).first()
 
     if not audit:
@@ -311,7 +311,7 @@ async def get_audit_details(
 ):
     """Get audit detail records."""
     audit = db.query(AuditSubmission).filter(
-        AuditSubmission.audit_id == audit_id
+        AuditSubmission.audit_id == str(audit_id)
     ).first()
 
     if not audit:
@@ -321,7 +321,7 @@ async def get_audit_details(
         )
 
     details = db.query(AuditDetail).filter(
-        AuditDetail.audit_id == audit_id
+        AuditDetail.audit_id == str(audit_id)
     ).order_by(AuditDetail.row_number).all()
 
     return details
@@ -337,7 +337,7 @@ async def get_executive_summary(
     report_service = ReportService(db)
 
     try:
-        return report_service.generate_executive_summary(audit_id)
+        return report_service.generate_executive_summary(str(audit_id))
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -353,7 +353,7 @@ async def get_action_list(
 ):
     """Get detailed action item list."""
     report_service = ReportService(db)
-    return report_service.generate_action_list(audit_id)
+    return report_service.generate_action_list(str(audit_id))
 
 
 @router.get("/{audit_id}/reports/export-excel")
@@ -366,7 +366,7 @@ async def export_audit_excel(
     from app.models.variance import Variance
 
     audit = db.query(AuditSubmission).filter(
-        AuditSubmission.audit_id == audit_id
+        AuditSubmission.audit_id == str(audit_id)
     ).first()
 
     if not audit:
@@ -376,7 +376,7 @@ async def export_audit_excel(
         )
 
     variances = db.query(Variance).filter(
-        Variance.audit_id == audit_id
+        Variance.audit_id == str(audit_id)
     ).order_by(Variance.priority, Variance.variance_type).all()
 
     # Create DataFrame
@@ -423,7 +423,7 @@ async def delete_audit(
         )
 
     audit = db.query(AuditSubmission).filter(
-        AuditSubmission.audit_id == audit_id
+        AuditSubmission.audit_id == str(audit_id)
     ).first()
 
     if not audit:

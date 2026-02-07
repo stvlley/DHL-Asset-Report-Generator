@@ -648,6 +648,9 @@ Requested Action: Review and update GL string to match physical location.
             AuditSubmission.audit_id == audit_id
         ).first()
 
+        if not audit:
+            raise ValueError(f"Audit {audit_id} not found")
+
         # Count by type
         by_type = {}
         for vt in VarianceType:
