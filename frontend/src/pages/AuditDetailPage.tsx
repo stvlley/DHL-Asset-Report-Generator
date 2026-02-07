@@ -39,16 +39,20 @@ export default function AuditDetailPage() {
   const [selectedVariance, setSelectedVariance] = useState<Variance | null>(null)
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set())
 
-  const { data: audit, isLoading: auditLoading } = useQuery({
+  const { data: audit, isLoading: auditLoading, isFetching: auditFetching } = useQuery({
     queryKey: ['audit', auditId],
     queryFn: () => auditsApi.get(auditId!),
     enabled: !!auditId,
+    retry: 3,
+    retryDelay: 500,
   })
 
-  const { data: summary, isLoading: summaryLoading } = useQuery({
+  const { data: summary, isLoading: summaryLoading, isFetching: summaryFetching } = useQuery({
     queryKey: ['audit-summary', auditId],
     queryFn: () => auditsApi.getExecutiveSummary(auditId!),
-    enabled: !!auditId,
+    enabled: !!auditId && !!audit,
+    retry: 3,
+    retryDelay: 500,
   })
 
   const { data: actionList } = useQuery({
@@ -132,7 +136,8 @@ export default function AuditDetailPage() {
     }
   }
 
-  if (auditLoading || summaryLoading) {
+  // Show loading while data is being fetched
+  if (auditLoading || summaryLoading || auditFetching || (!audit && auditId)) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-dhl-red" />
@@ -140,10 +145,25 @@ export default function AuditDetailPage() {
     )
   }
 
-  if (!audit || !summary) {
+  if (!audit) {
     return (
       <div className="text-center py-12">
         <p className="text-gray-500">Audit not found</p>
+        <button
+          onClick={() => window.location.reload()}
+          className="mt-4 text-dhl-red hover:underline"
+        >
+          Refresh page
+        </button>
+      </div>
+    )
+  }
+
+  // Show loading for summary after audit is loaded
+  if (summaryFetching || !summary) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-dhl-red" />
       </div>
     )
   }
