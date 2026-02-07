@@ -65,28 +65,8 @@ export default function MasterDataPage() {
 
   // MDM Status Upload
   const mdmUploadMutation = useMutation({
-    mutationFn: async ({ file, siteCode }: { file: File; siteCode?: string }) => {
-      const formData = new FormData()
-      formData.append('file', file)
-
-      const params = new URLSearchParams()
-      if (siteCode) params.append('site_code', siteCode)
-
-      const response = await fetch(`/api/v1/assets/upload-mdm-status?${params}`, {
-        method: 'POST',
-        body: formData,
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem('access_token') || ''}`,
-        },
-      })
-
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.detail || 'Upload failed')
-      }
-
-      return response.json()
-    },
+    mutationFn: ({ file, siteCode }: { file: File; siteCode?: string }) =>
+      assetManagementApi.uploadMdmStatus(file, siteCode),
     onSuccess: (result) => {
       setUploadResult({
         status: 'success',
