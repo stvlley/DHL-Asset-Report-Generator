@@ -215,6 +215,23 @@ print('Migration complete!')
 "
 ```
 
+### Creating Scan Audit Tables (for real-time scanning)
+
+If you get "no such table: scan_sessions" errors:
+
+```bash
+cd backend
+source venv/bin/activate  # Linux
+# Or: venv\Scripts\activate  # Windows
+
+python -c "
+from app.core.database import engine, Base
+from app.models.scan_audit import ScanSession, ScanResult
+Base.metadata.create_all(bind=engine, tables=[ScanSession.__table__, ScanResult.__table__])
+print('Scan audit tables created!')
+"
+```
+
 ---
 
 ## Default Login
