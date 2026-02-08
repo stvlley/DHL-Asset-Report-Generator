@@ -9,6 +9,7 @@ import AuditDetailPage from './pages/AuditDetailPage'
 import MasterDataPage from './pages/MasterDataPage'
 import SitesPage from './pages/SitesPage'
 import ITAllocationPage from './pages/ITAllocationPage'
+import ScanAuditPage from './pages/ScanAuditPage'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuthStore()
@@ -41,6 +42,7 @@ function App() {
           <Route path="master-data" element={<MasterDataPage />} />
           <Route path="sites" element={<SitesPage />} />
           <Route path="it-allocation" element={<ITAllocationPage />} />
+          <Route path="scan-audit" element={<ScanAuditPage />} />
         </Route>
       </Routes>
     </BrowserRouter>

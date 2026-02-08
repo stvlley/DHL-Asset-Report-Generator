@@ -12,10 +12,12 @@ import {
   Menu,
   X,
   User,
+  Scan,
 } from 'lucide-react'
 
 const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
+  { name: 'Scan Audit', href: '/scan-audit', icon: Scan },
   { name: 'Upload Audit', href: '/upload', icon: Upload },
   { name: 'Audits', href: '/audits', icon: FileText },
   { name: 'Master Data', href: '/master-data', icon: Database },

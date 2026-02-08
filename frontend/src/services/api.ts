@@ -634,4 +634,185 @@ export const itAllocationApi = {
   },
 }
 
+// Scan Audit API
+export const scanAuditApi = {
+  startSession: async (data: {
+    site_code: string
+    session_name?: string
+    auditor_name?: string
+  }): Promise<{
+    session_id: string
+    site_code: string
+    session_name: string
+    auditor_name: string
+    expected_count: number
+    started_at: string
+    message: string
+  }> => {
+    const response = await api.post('/scan/sessions/start', data)
+    return response.data
+  },
+
+  getActiveSession: async (siteCode: string): Promise<{
+    active: boolean
+    session: {
+      session_id: string
+      site_code: string
+      session_name: string
+      is_active: boolean
+      started_at: string
+      auditor_name: string
+      expected_count: number
+      total_scanned: number
+      found_count: number
+      not_tracked_count: number
+      good_count: number
+      bad_count: number
+      missing_count: number
+      progress_percent: number
+    } | null
+  }> => {
+    const response = await api.get(`/scan/sessions/active/${siteCode}`)
+    return response.data
+  },
+
+  endSession: async (sessionId: string): Promise<{ message: string; stats: Record<string, unknown> }> => {
+    const response = await api.post(`/scan/sessions/${sessionId}/end`)
+    return response.data
+  },
+
+  getSessionStats: async (sessionId: string): Promise<{
+    session_id: string
+    site_code: string
+    session_name: string
+    is_active: boolean
+    expected_count: number
+    total_scanned: number
+    found_count: number
+    not_tracked_count: number
+    good_count: number
+    bad_count: number
+    missing_count: number
+    progress_percent: number
+  }> => {
+    const response = await api.get(`/scan/sessions/${sessionId}/stats`)
+    return response.data
+  },
+
+  getSessionHistory: async (siteCode: string, limit: number = 10): Promise<{
+    sessions: Array<{
+      session_id: string
+      session_name: string
+      started_at: string
+      completed_at: string | null
+      is_active: boolean
+      auditor_name: string
+      expected_count: number
+      total_scanned: number
+      found_count: number
+      progress_percent: number
+    }>
+  }> => {
+    const response = await api.get(`/scan/sessions/history/${siteCode}`, { params: { limit } })
+    return response.data
+  },
+
+  lookup: async (sessionId: string, scannedValue: string): Promise<{
+    status: 'found' | 'not_tracked' | 'duplicate'
+    asset_id?: string
+    serial_number?: string
+    hsn?: string
+    model?: string
+    asset_type?: string
+    current_condition?: string
+    gl_string?: string
+    cost_per_month?: number
+    mdm_status?: string
+    mdm_days_since_connect?: number
+    message?: string
+    scanned_value?: string
+    scanned_at?: string
+    recorded_condition?: string
+    result_id?: string
+  }> => {
+    const response = await api.post(`/scan/sessions/${sessionId}/lookup`, {
+      scanned_value: scannedValue,
+    })
+    return response.data
+  },
+
+  recordScan: async (
+    sessionId: string,
+    data: {
+      scanned_value: string
+      condition: string
+      location?: string
+      notes?: string
+    }
+  ): Promise<{
+    status: string
+    result_id: string
+    scan_status: string
+    recorded_condition: string
+    session_stats: {
+      total_scanned: number
+      expected: number
+      remaining: number
+      progress_percent: number
+    }
+  }> => {
+    const response = await api.post(`/scan/sessions/${sessionId}/record`, data)
+    return response.data
+  },
+
+  getScannedItems: async (
+    sessionId: string,
+    limit: number = 50,
+    offset: number = 0
+  ): Promise<{
+    items: Array<{
+      result_id: string
+      scanned_value: string
+      scanned_at: string
+      scan_status: string
+      master_serial: string | null
+      master_model: string | null
+      master_asset_type: string | null
+      recorded_condition: string
+      location: string | null
+      notes: string | null
+    }>
+    total: number
+  }> => {
+    const response = await api.get(`/scan/sessions/${sessionId}/scanned`, {
+      params: { limit, offset },
+    })
+    return response.data
+  },
+
+  getMissingAssets: async (
+    sessionId: string,
+    limit: number = 100,
+    offset: number = 0
+  ): Promise<{
+    items: Array<{
+      asset_id: string
+      serial_number: string
+      hsn: string | null
+      model: string
+      asset_type: string
+      recorded_condition: string | null
+      gl_string: string
+      mdm_status: string | null
+      mdm_days_since_connect: number | null
+    }>
+    total: number
+  }> => {
+    const response = await api.get(`/scan/sessions/${sessionId}/missing`, {
+      params: { limit, offset },
+    })
+    return response.data
+  },
+}
+
 export default api
