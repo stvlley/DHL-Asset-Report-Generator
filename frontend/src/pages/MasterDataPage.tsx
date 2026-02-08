@@ -18,7 +18,38 @@ import {
   RefreshCw,
   ArrowRight,
   FileText,
+  Plus,
+  Pencil,
+  Trash2,
+  Save,
 } from 'lucide-react'
+import type { Asset } from '../types'
+
+interface AssetFormData {
+  serial_number: string
+  assigned_site_code: string
+  asset_type: string
+  model: string
+  gl_string: string
+  hsn?: string
+  mac_address?: string
+  recorded_condition?: string
+  cost_per_month?: number
+  notes?: string
+}
+
+const emptyAssetForm: AssetFormData = {
+  serial_number: '',
+  assigned_site_code: '',
+  asset_type: '',
+  model: '',
+  gl_string: '',
+  hsn: '',
+  mac_address: '',
+  recorded_condition: 'Good',
+  cost_per_month: undefined,
+  notes: '',
+}
 
 export default function MasterDataPage() {
   const [selectedSite, setSelectedSite] = useState<string>('')
@@ -38,6 +69,12 @@ export default function MasterDataPage() {
     }
   } | null>(null)
   const queryClient = useQueryClient()
+
+  // Asset CRUD state
+  const [showAssetModal, setShowAssetModal] = useState(false)
+  const [editingAsset, setEditingAsset] = useState<Asset | null>(null)
+  const [assetForm, setAssetForm] = useState<AssetFormData>(emptyAssetForm)
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
 
   const { data: sites } = useQuery({
     queryKey: ['sites'],
@@ -93,6 +130,72 @@ export default function MasterDataPage() {
     },
   })
 
+  // Asset CRUD mutations
+  const createAssetMutation = useMutation({
+    mutationFn: (data: AssetFormData) => assetManagementApi.create(data),
+    onSuccess: () => {
+      setShowAssetModal(false)
+      setAssetForm(emptyAssetForm)
+      queryClient.invalidateQueries({ queryKey: ['assets-managed'] })
+      queryClient.invalidateQueries({ queryKey: ['reconciliation-summary'] })
+    },
+  })
+
+  const updateAssetMutation = useMutation({
+    mutationFn: ({ assetId, data }: { assetId: string; data: Partial<AssetFormData> }) =>
+      assetManagementApi.update(assetId, data),
+    onSuccess: () => {
+      setShowAssetModal(false)
+      setEditingAsset(null)
+      setAssetForm(emptyAssetForm)
+      queryClient.invalidateQueries({ queryKey: ['assets-managed'] })
+      queryClient.invalidateQueries({ queryKey: ['reconciliation-summary'] })
+    },
+  })
+
+  const deleteAssetMutation = useMutation({
+    mutationFn: (assetId: string) => assetManagementApi.delete(assetId),
+    onSuccess: () => {
+      setDeleteConfirm(null)
+      queryClient.invalidateQueries({ queryKey: ['assets-managed'] })
+      queryClient.invalidateQueries({ queryKey: ['reconciliation-summary'] })
+    },
+  })
+
+  const handleOpenCreateModal = () => {
+    setEditingAsset(null)
+    setAssetForm({
+      ...emptyAssetForm,
+      assigned_site_code: selectedSite || '',
+    })
+    setShowAssetModal(true)
+  }
+
+  const handleOpenEditModal = (asset: Asset) => {
+    setEditingAsset(asset)
+    setAssetForm({
+      serial_number: asset.serial_number,
+      assigned_site_code: asset.assigned_site_code,
+      asset_type: asset.asset_type,
+      model: asset.model,
+      gl_string: asset.gl_string,
+      hsn: asset.hsn || '',
+      mac_address: asset.mac_address || '',
+      recorded_condition: asset.recorded_condition || 'Good',
+      cost_per_month: asset.cost_per_month || undefined,
+      notes: asset.notes || '',
+    })
+    setShowAssetModal(true)
+  }
+
+  const handleSaveAsset = () => {
+    if (editingAsset) {
+      updateAssetMutation.mutate({ assetId: editingAsset.asset_id, data: assetForm })
+    } else {
+      createAssetMutation.mutate(assetForm)
+    }
+  }
+
   const onDrop = useCallback((acceptedFiles: File[]) => {
     if (acceptedFiles.length > 0) {
       setMdmFile(acceptedFiles[0])
@@ -130,6 +233,13 @@ export default function MasterDataPage() {
           </p>
         </div>
         <div className="flex gap-2">
+          <button
+            onClick={handleOpenCreateModal}
+            className="btn-primary"
+          >
+            <Plus className="w-4 h-4 mr-2" />
+            Add Asset
+          </button>
           <button
             onClick={() => queryClient.invalidateQueries()}
             className="btn-secondary"
@@ -464,6 +574,9 @@ export default function MasterDataPage() {
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                     Cost/Mo
                   </th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">
+                    Actions
+                  </th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
@@ -525,6 +638,24 @@ export default function MasterDataPage() {
                         ? `$${Number(asset.cost_per_month).toFixed(2)}`
                         : '-'}
                     </td>
+                    <td className="px-4 py-3 text-sm text-right">
+                      <div className="flex justify-end gap-2">
+                        <button
+                          onClick={() => handleOpenEditModal(asset)}
+                          className="p-1 text-gray-400 hover:text-blue-600"
+                          title="Edit asset"
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => setDeleteConfirm(asset.asset_id)}
+                          className="p-1 text-gray-400 hover:text-red-600"
+                          title="Delete asset"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -549,6 +680,236 @@ export default function MasterDataPage() {
       {assetsData && (
         <div className="text-sm text-gray-500 text-center">
           Showing {assets.length} of {assetsData.total} assets
+        </div>
+      )}
+
+      {/* Asset Create/Edit Modal */}
+      {showAssetModal && (
+        <div className="fixed inset-0 z-50 overflow-y-auto">
+          <div className="flex items-center justify-center min-h-screen px-4">
+            <div className="fixed inset-0 bg-black opacity-30" onClick={() => setShowAssetModal(false)} />
+            <div className="relative bg-white rounded-lg shadow-xl max-w-lg w-full p-6">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-lg font-semibold text-gray-900">
+                  {editingAsset ? 'Edit Asset' : 'Add New Asset'}
+                </h3>
+                <button
+                  onClick={() => setShowAssetModal(false)}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Serial Number *
+                    </label>
+                    <input
+                      type="text"
+                      value={assetForm.serial_number}
+                      onChange={(e) => setAssetForm({ ...assetForm, serial_number: e.target.value })}
+                      className="input"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Site *
+                    </label>
+                    <select
+                      value={assetForm.assigned_site_code}
+                      onChange={(e) => setAssetForm({ ...assetForm, assigned_site_code: e.target.value })}
+                      className="input"
+                      required
+                    >
+                      <option value="">Select Site</option>
+                      {sites?.map((site) => (
+                        <option key={site.site_code} value={site.site_code}>
+                          {site.site_code} - {site.site_name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Asset Type *
+                    </label>
+                    <select
+                      value={assetForm.asset_type}
+                      onChange={(e) => setAssetForm({ ...assetForm, asset_type: e.target.value })}
+                      className="input"
+                      required
+                    >
+                      <option value="">Select Type</option>
+                      <option value="RF Scanner">RF Scanner</option>
+                      <option value="Tablet">Tablet</option>
+                      <option value="Printer">Printer</option>
+                      <option value="Laptop">Laptop</option>
+                      <option value="RF Software License">RF Software License</option>
+                      <option value="Other">Other</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Model *
+                    </label>
+                    <input
+                      type="text"
+                      value={assetForm.model}
+                      onChange={(e) => setAssetForm({ ...assetForm, model: e.target.value })}
+                      className="input"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    GL String *
+                  </label>
+                  <input
+                    type="text"
+                    value={assetForm.gl_string}
+                    onChange={(e) => setAssetForm({ ...assetForm, gl_string: e.target.value })}
+                    className="input"
+                    placeholder="e.g., 0001-1234-5678-0000-0000"
+                    required
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      HSN
+                    </label>
+                    <input
+                      type="text"
+                      value={assetForm.hsn || ''}
+                      onChange={(e) => setAssetForm({ ...assetForm, hsn: e.target.value })}
+                      className="input"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      MAC Address
+                    </label>
+                    <input
+                      type="text"
+                      value={assetForm.mac_address || ''}
+                      onChange={(e) => setAssetForm({ ...assetForm, mac_address: e.target.value })}
+                      className="input"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Condition
+                    </label>
+                    <select
+                      value={assetForm.recorded_condition || 'Good'}
+                      onChange={(e) => setAssetForm({ ...assetForm, recorded_condition: e.target.value })}
+                      className="input"
+                    >
+                      <option value="Good">Good</option>
+                      <option value="Bad">Bad</option>
+                      <option value="RMA">RMA</option>
+                      <option value="Lost">Lost</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Cost/Month ($)
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={assetForm.cost_per_month || ''}
+                      onChange={(e) => setAssetForm({ ...assetForm, cost_per_month: e.target.value ? parseFloat(e.target.value) : undefined })}
+                      className="input"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Notes
+                  </label>
+                  <textarea
+                    value={assetForm.notes || ''}
+                    onChange={(e) => setAssetForm({ ...assetForm, notes: e.target.value })}
+                    className="input"
+                    rows={2}
+                  />
+                </div>
+              </div>
+
+              <div className="mt-6 flex justify-end gap-3">
+                <button
+                  onClick={() => setShowAssetModal(false)}
+                  className="btn-secondary"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSaveAsset}
+                  disabled={createAssetMutation.isPending || updateAssetMutation.isPending || !assetForm.serial_number || !assetForm.assigned_site_code || !assetForm.asset_type || !assetForm.model || !assetForm.gl_string}
+                  className="btn-primary"
+                >
+                  <Save className="w-4 h-4 mr-2" />
+                  {editingAsset ? 'Save Changes' : 'Create Asset'}
+                </button>
+              </div>
+
+              {(createAssetMutation.isError || updateAssetMutation.isError) && (
+                <div className="mt-4 p-3 bg-red-50 text-red-700 rounded text-sm">
+                  {(createAssetMutation.error as Error)?.message || (updateAssetMutation.error as Error)?.message || 'An error occurred'}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deleteConfirm && (
+        <div className="fixed inset-0 z-50 overflow-y-auto">
+          <div className="flex items-center justify-center min-h-screen px-4">
+            <div className="fixed inset-0 bg-black opacity-30" onClick={() => setDeleteConfirm(null)} />
+            <div className="relative bg-white rounded-lg shadow-xl max-w-sm w-full p-6">
+              <div className="text-center">
+                <AlertTriangle className="w-12 h-12 text-amber-500 mx-auto mb-4" />
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                  Delete Asset?
+                </h3>
+                <p className="text-sm text-gray-500 mb-6">
+                  This will remove the asset from the master database. This action can be undone by re-importing from IT Allocation.
+                </p>
+                <div className="flex justify-center gap-3">
+                  <button
+                    onClick={() => setDeleteConfirm(null)}
+                    className="btn-secondary"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => deleteAssetMutation.mutate(deleteConfirm)}
+                    disabled={deleteAssetMutation.isPending}
+                    className="btn-primary bg-red-600 hover:bg-red-700"
+                  >
+                    {deleteAssetMutation.isPending ? 'Deleting...' : 'Delete'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>
