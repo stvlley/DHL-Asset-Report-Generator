@@ -9,6 +9,7 @@ from app.models.mdm import MDMSnapshot, MDMDetail
 from app.models.variance import Variance
 from app.models.audit_log import AuditLog
 from app.models.it_allocation import ITAllocationSnapshot, ITAllocationDevice, SiteGLMapping
+from app.models.scan_audit import ScanSession, ScanResult
 
 __all__ = [
     "User",
@@ -23,4 +24,6 @@ __all__ = [
     "ITAllocationSnapshot",
     "ITAllocationDevice",
     "SiteGLMapping",
+    "ScanSession",
+    "ScanResult",
 ]

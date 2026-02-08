@@ -13,6 +13,15 @@ from app.core.config import settings
 from app.core.database import engine, Base
 from app.api.v1 import api_router
 
+# Import all models to ensure they are registered with Base.metadata
+# This must happen BEFORE Base.metadata.create_all() is called
+from app.models import (  # noqa: F401
+    User, Site, AssetMaster, AuditSubmission, AuditDetail,
+    MDMSnapshot, MDMDetail, Variance, AuditLog,
+    ITAllocationSnapshot, ITAllocationDevice, SiteGLMapping,
+    ScanSession, ScanResult
+)
+
 # Configure logging
 logging.basicConfig(
     level=getattr(logging, settings.LOG_LEVEL),
