@@ -162,6 +162,48 @@ export default function MasterDataPage() {
     },
   })
 
+  // Seed from IT Allocation
+  const [seedResult, setSeedResult] = useState<{
+    status: 'success' | 'error'
+    message: string
+    stats?: { created: number; updated: number; skipped: number }
+  } | null>(null)
+
+  const seedFromAllocationMutation = useMutation({
+    mutationFn: ({ snapshotId, siteCode }: { snapshotId: string; siteCode?: string }) =>
+      assetManagementApi.syncFromAllocation(snapshotId, siteCode),
+    onSuccess: (result) => {
+      setSeedResult({
+        status: 'success',
+        message: `Seeded ${result.created} new assets, updated ${result.updated}`,
+        stats: { created: result.created, updated: result.updated, skipped: result.skipped },
+      })
+      queryClient.invalidateQueries({ queryKey: ['assets-managed'] })
+      queryClient.invalidateQueries({ queryKey: ['reconciliation-summary'] })
+    },
+    onError: (error: Error) => {
+      setSeedResult({
+        status: 'error',
+        message: error.message,
+      })
+    },
+  })
+
+  const handleSeedFromAllocation = () => {
+    if (!snapshots || snapshots.length === 0) {
+      setSeedResult({
+        status: 'error',
+        message: 'No IT Allocation snapshots available. Upload IT Allocation data first.',
+      })
+      return
+    }
+    const latestSnapshotId = snapshots[0].snapshot_id
+    seedFromAllocationMutation.mutate({
+      snapshotId: latestSnapshotId,
+      siteCode: selectedSite || undefined,
+    })
+  }
+
   const handleOpenCreateModal = () => {
     setEditingAsset(null)
     setAssetForm({
@@ -234,6 +276,15 @@ export default function MasterDataPage() {
         </div>
         <div className="flex gap-2">
           <button
+            onClick={handleSeedFromAllocation}
+            disabled={seedFromAllocationMutation.isPending || !snapshots || snapshots.length === 0}
+            className="btn-secondary"
+            title="Sync assets from the latest IT Allocation upload"
+          >
+            <Database className="w-4 h-4 mr-2" />
+            {seedFromAllocationMutation.isPending ? 'Seeding...' : 'Seed from IT Allocation'}
+          </button>
+          <button
             onClick={handleOpenCreateModal}
             className="btn-primary"
           >
@@ -286,6 +337,47 @@ export default function MasterDataPage() {
           )}
         </p>
       </div>
+
+      {/* Seed Result Notification */}
+      {seedResult && (
+        <div
+          className={`card p-4 ${
+            seedResult.status === 'success'
+              ? 'bg-green-50 border-green-200'
+              : 'bg-red-50 border-red-200'
+          }`}
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex items-center">
+              {seedResult.status === 'success' ? (
+                <CheckCircle className="w-5 h-5 text-green-500 mr-2" />
+              ) : (
+                <AlertCircle className="w-5 h-5 text-red-500 mr-2" />
+              )}
+              <span
+                className={
+                  seedResult.status === 'success' ? 'text-green-700' : 'text-red-700'
+                }
+              >
+                {seedResult.message}
+              </span>
+            </div>
+            <button
+              onClick={() => setSeedResult(null)}
+              className="text-gray-400 hover:text-gray-600"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+          {seedResult.stats && (
+            <div className="mt-2 text-sm text-green-600 flex gap-4">
+              <span>Created: {seedResult.stats.created}</span>
+              <span>Updated: {seedResult.stats.updated}</span>
+              <span>Skipped: {seedResult.stats.skipped}</span>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Disconnected Devices Alert */}
       {disconnected && disconnected.count > 0 && (

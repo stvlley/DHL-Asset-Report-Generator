@@ -500,6 +500,23 @@ export const assetManagementApi = {
     )
     return response.data
   },
+
+  syncFromAllocation: async (
+    snapshotId: string,
+    siteCode?: string
+  ): Promise<{
+    total_devices: number
+    created: number
+    updated: number
+    skipped: number
+    errors: Array<{ hsn?: string; mac?: string; error: string }>
+  }> => {
+    const response = await api.post('/assets/sync-from-allocation', {
+      snapshot_id: snapshotId,
+      site_code: siteCode,
+    })
+    return response.data
+  },
 }
 
 // Settings API
