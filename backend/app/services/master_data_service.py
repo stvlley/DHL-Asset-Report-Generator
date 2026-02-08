@@ -71,9 +71,15 @@ class MasterDataService:
             "errors": []
         }
 
+        # Track processed serials in this batch to avoid duplicate INSERTs
+        # Key: (serial_number, site_code) -> already processed in this batch
+        processed_in_batch: set = set()
+
         for device in devices:
             try:
-                result = self._sync_device_to_master(device, site_code, user_id, snapshot_id)
+                result = self._sync_device_to_master(
+                    device, site_code, user_id, snapshot_id, processed_in_batch
+                )
                 stats[result] += 1
             except Exception as e:
                 stats["errors"].append({
@@ -90,17 +96,19 @@ class MasterDataService:
         device: ITAllocationDevice,
         site_code: Optional[str],
         user_id: Optional[str],
-        snapshot_id: str
+        snapshot_id: str,
+        processed_in_batch: Optional[set] = None
     ) -> str:
         """Sync a single device to AssetMaster. Returns 'created', 'updated', or 'skipped'."""
         # Determine site from GL string if not specified
-        if not site_code:
+        resolved_site = site_code
+        if not resolved_site:
             mapping = self.db.query(SiteGLMapping).filter(
                 SiteGLMapping.gl_string == device.gl_string
             ).first()
-            site_code = mapping.site_code if mapping else None
+            resolved_site = mapping.site_code if mapping else None
 
-        if not site_code:
+        if not resolved_site:
             return "skipped"  # Can't determine site
 
         # Use HSN as serial number, fall back to MAC
@@ -108,10 +116,17 @@ class MasterDataService:
         if not serial:
             return "skipped"  # No identifier
 
-        # Check if asset exists
+        # Check if we've already processed this serial+site in this batch
+        batch_key = (serial, resolved_site)
+        if processed_in_batch is not None:
+            if batch_key in processed_in_batch:
+                return "skipped"  # Already handled in this batch
+            processed_in_batch.add(batch_key)
+
+        # Check if asset exists in database
         existing = self.db.query(AssetMaster).filter(
             AssetMaster.serial_number == serial,
-            AssetMaster.assigned_site_code == site_code,
+            AssetMaster.assigned_site_code == resolved_site,
             AssetMaster.is_deleted == False
         ).first()
 
@@ -133,7 +148,7 @@ class MasterDataService:
             # Create new
             new_asset = AssetMaster(
                 serial_number=serial,
-                assigned_site_code=site_code,
+                assigned_site_code=resolved_site,
                 hsn=device.hsn,
                 mac_address=device.mac_address,
                 asset_type=asset_type,
