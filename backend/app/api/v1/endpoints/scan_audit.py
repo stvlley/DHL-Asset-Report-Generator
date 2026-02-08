@@ -250,3 +250,29 @@ async def get_missing_assets(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(e)
         )
+
+
+@router.get("/sessions/{session_id}/model-breakdown")
+async def get_model_breakdown(
+    session_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get expected vs scanned counts broken down by model and asset type.
+
+    Shows:
+    - Expected count per model (from master data)
+    - Scanned count per model (from this session)
+    - Remaining count per model (expected - scanned)
+
+    Useful for seeing at a glance which device types still need scanning.
+    """
+    service = ScanAuditService(db)
+    try:
+        return service.get_model_breakdown(session_id)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e)
+        )

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { auditsApi, variancesApi, itAllocationApi } from '../services/api'
+import { auditsApi, variancesApi } from '../services/api'
 import { format } from 'date-fns'
 import type { Variance } from '../types'
 import {
@@ -14,7 +14,6 @@ import {
   Wrench,
   Copy,
   Search,
-  Filter,
   Check,
   Clock,
   XCircle,
@@ -36,7 +35,7 @@ export default function AuditDetailPage() {
   const [varianceFilter, setVarianceFilter] = useState<VarianceFilter>('all')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [searchTerm, setSearchTerm] = useState('')
-  const [selectedVariance, setSelectedVariance] = useState<Variance | null>(null)
+  const [_selectedVariance, setSelectedVariance] = useState<Variance | null>(null)
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set())
 
   const { data: audit, isLoading: auditLoading, isFetching: auditFetching } = useQuery({

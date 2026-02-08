@@ -28,7 +28,14 @@ export default function MasterDataPage() {
   const [uploadResult, setUploadResult] = useState<{
     status: 'success' | 'error'
     message: string
-    stats?: Record<string, number>
+    stats?: {
+      total_rows: number
+      matched: number
+      unmatched: number
+      connected: number
+      disconnected: number
+      errors?: Array<{ row: number; error: string }>
+    }
   } | null>(null)
   const queryClient = useQueryClient()
 
@@ -492,7 +499,7 @@ export default function MasterDataPage() {
                     </td>
                     <td className="px-4 py-3 text-sm">
                       {asset.mdm_enrollment_status === 'enrolled' ? (
-                        asset.mdm_days_since_connect !== null &&
+                        asset.mdm_days_since_connect != null &&
                         asset.mdm_days_since_connect >= 60 ? (
                           <span className="inline-flex items-center px-2 py-1 text-xs font-medium rounded bg-amber-100 text-amber-700">
                             <WifiOff className="w-3 h-3 mr-1" />

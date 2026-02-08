@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useMutation } from '@tanstack/react-query'
 import { scanAuditApi, sitesApi } from '../services/api'
 import {
   Scan,
@@ -15,9 +15,11 @@ import {
   WifiOff,
   ChevronDown,
   ChevronUp,
+  BarChart3,
+  Package,
 } from 'lucide-react'
 
-type TabType = 'scan' | 'scanned' | 'missing'
+type TabType = 'scan' | 'progress' | 'scanned' | 'missing'
 
 export default function ScanAuditPage() {
   const [selectedSite, setSelectedSite] = useState<string>('')
@@ -27,7 +29,6 @@ export default function ScanAuditPage() {
   const [activeTab, setActiveTab] = useState<TabType>('scan')
   const [showHistory, setShowHistory] = useState(false)
   const scanInputRef = useRef<HTMLInputElement>(null)
-  const queryClient = useQueryClient()
 
   const { data: sites } = useQuery({
     queryKey: ['sites'],
@@ -57,6 +58,13 @@ export default function ScanAuditPage() {
     queryKey: ['missing-assets', sessionId],
     queryFn: () => scanAuditApi.getMissingAssets(sessionId!, 100, 0),
     enabled: !!sessionId && activeTab === 'missing',
+  })
+
+  const { data: modelBreakdown, refetch: refetchModelBreakdown } = useQuery({
+    queryKey: ['model-breakdown', sessionId],
+    queryFn: () => scanAuditApi.getModelBreakdown(sessionId!),
+    enabled: !!sessionId && activeTab === 'progress',
+    refetchInterval: activeTab === 'progress' ? 5000 : false,
   })
 
   const { data: sessionHistory } = useQuery({
@@ -138,6 +146,7 @@ export default function ScanAuditPage() {
       refetchStats()
       refetchScanned()
       refetchMissing()
+      refetchModelBreakdown()
       scanInputRef.current?.focus()
     },
   })
@@ -306,6 +315,7 @@ export default function ScanAuditPage() {
             <nav className="flex space-x-8">
               {[
                 { id: 'scan', label: 'Scan', icon: Scan },
+                { id: 'progress', label: 'Progress by Model', icon: BarChart3 },
                 { id: 'scanned', label: 'Scanned Items', icon: List, count: stats.total_scanned },
                 { id: 'missing', label: 'Missing', icon: AlertCircle, count: stats.missing_count },
               ].map((tab) => (
@@ -409,10 +419,10 @@ export default function ScanAuditPage() {
                               <span className="text-gray-500">Current Condition:</span>{' '}
                               <span className="font-medium">{(lookupResult.current_condition as string) || 'N/A'}</span>
                             </p>
-                            {lookupResult.mdm_status && (
+                            {lookupResult.mdm_status ? (
                               <p className="flex items-center">
                                 <span className="text-gray-500">MDM:</span>{' '}
-                                {lookupResult.mdm_days_since_connect === 0 ? (
+                                {(lookupResult.mdm_days_since_connect as number) === 0 ? (
                                   <span className="ml-1 flex items-center text-green-600">
                                     <Wifi className="w-3 h-3 mr-1" /> Connected
                                   </span>
@@ -422,7 +432,7 @@ export default function ScanAuditPage() {
                                   </span>
                                 )}
                               </p>
-                            )}
+                            ) : null}
                           </div>
                         )}
                         {lookupResult.status === 'duplicate' && (
@@ -469,6 +479,94 @@ export default function ScanAuditPage() {
                   Press <kbd className="px-2 py-1 bg-gray-100 rounded border">G</kbd> for Good or{' '}
                   <kbd className="px-2 py-1 bg-gray-100 rounded border">B</kbd> for Bad after scanning
                 </p>
+              </div>
+            </div>
+          )}
+
+          {/* Progress by Model Tab */}
+          {activeTab === 'progress' && modelBreakdown && (
+            <div className="space-y-6">
+              {/* Summary Cards */}
+              <div className="grid grid-cols-3 gap-4">
+                <div className="card p-4 text-center">
+                  <p className="text-3xl font-bold text-gray-900">{modelBreakdown.total_expected}</p>
+                  <p className="text-sm text-gray-500">Expected</p>
+                </div>
+                <div className="card p-4 text-center">
+                  <p className="text-3xl font-bold text-green-600">{modelBreakdown.total_scanned}</p>
+                  <p className="text-sm text-gray-500">Scanned</p>
+                </div>
+                <div className="card p-4 text-center">
+                  <p className="text-3xl font-bold text-amber-600">{modelBreakdown.total_remaining}</p>
+                  <p className="text-sm text-gray-500">Remaining</p>
+                </div>
+              </div>
+
+              {/* Progress by Asset Type */}
+              <div className="card overflow-hidden">
+                <div className="p-4 bg-gray-50 border-b">
+                  <h3 className="font-semibold text-gray-900 flex items-center">
+                    <Package className="w-5 h-5 mr-2" />
+                    Progress by Device Type
+                  </h3>
+                </div>
+                <div className="divide-y divide-gray-200">
+                  {modelBreakdown.by_type.map((type) => (
+                    <div key={type.asset_type} className="p-4">
+                      <div className="flex justify-between items-center mb-2">
+                        <div className="font-medium text-gray-900">{type.asset_type}</div>
+                        <div className="text-sm">
+                          <span className="text-green-600 font-semibold">{type.scanned}</span>
+                          <span className="text-gray-400 mx-1">/</span>
+                          <span className="text-gray-600">{type.expected}</span>
+                          {type.remaining > 0 && (
+                            <span className="ml-2 text-amber-600">({type.remaining} remaining)</span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="w-full bg-gray-200 rounded-full h-2 mb-3">
+                        <div
+                          className={`h-2 rounded-full transition-all duration-300 ${
+                            type.remaining === 0 ? 'bg-green-500' : 'bg-blue-500'
+                          }`}
+                          style={{ width: `${type.expected > 0 ? (type.scanned / type.expected) * 100 : 0}%` }}
+                        />
+                      </div>
+
+                      {/* Models within this type */}
+                      <div className="ml-4 space-y-2">
+                        {type.models.map((model) => (
+                          <div key={model.model} className="flex items-center justify-between text-sm">
+                            <span className="text-gray-600 truncate flex-1">{model.model}</span>
+                            <div className="flex items-center gap-3 ml-4">
+                              <div className="w-32 bg-gray-100 rounded-full h-1.5">
+                                <div
+                                  className={`h-1.5 rounded-full ${
+                                    model.remaining === 0 ? 'bg-green-400' : 'bg-blue-400'
+                                  }`}
+                                  style={{ width: `${model.expected > 0 ? (model.scanned / model.expected) * 100 : 0}%` }}
+                                />
+                              </div>
+                              <span className="text-gray-500 w-20 text-right">
+                                {model.scanned}/{model.expected}
+                              </span>
+                              {model.remaining > 0 ? (
+                                <span className="text-amber-600 w-16 text-right">-{model.remaining}</span>
+                              ) : (
+                                <CheckCircle className="w-4 h-4 text-green-500 w-16" />
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                {modelBreakdown.by_type.length === 0 && (
+                  <div className="p-8 text-center text-gray-500">
+                    No assets found in master data for this site
+                  </div>
+                )}
               </div>
             </div>
           )}

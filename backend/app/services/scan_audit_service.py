@@ -286,6 +286,104 @@ class ScanAuditService:
             "progress_percent": round((session.found_count / session.expected_count * 100), 1) if session.expected_count > 0 else 0
         }
 
+    def get_model_breakdown(self, session_id: str) -> Dict[str, Any]:
+        """
+        Get expected vs scanned counts broken down by model/type.
+
+        Returns:
+            Dictionary with models showing expected, scanned, and remaining counts
+        """
+        session = self.db.query(ScanSession).filter(
+            ScanSession.session_id == session_id
+        ).first()
+
+        if not session:
+            raise ValueError("Session not found")
+
+        # Get all assets for this site grouped by model
+        from sqlalchemy import func
+
+        expected_by_model = self.db.query(
+            AssetMaster.model,
+            AssetMaster.asset_type,
+            func.count(AssetMaster.asset_id).label('count')
+        ).filter(
+            AssetMaster.assigned_site_code == session.site_code,
+            AssetMaster.is_deleted == False
+        ).group_by(AssetMaster.model, AssetMaster.asset_type).all()
+
+        # Get scanned asset IDs in this session
+        scanned_results = self.db.query(ScanResult).filter(
+            ScanResult.session_id == session_id,
+            ScanResult.asset_id.isnot(None)
+        ).all()
+
+        scanned_ids = {r.asset_id for r in scanned_results}
+
+        # Build model breakdown
+        models = {}
+        for model, asset_type, count in expected_by_model:
+            model_key = model or "Unknown"
+
+            # Count how many of this model have been scanned
+            scanned_count = self.db.query(AssetMaster).filter(
+                AssetMaster.assigned_site_code == session.site_code,
+                AssetMaster.model == model,
+                AssetMaster.is_deleted == False,
+                AssetMaster.asset_id.in_(scanned_ids) if scanned_ids else False
+            ).count() if scanned_ids else 0
+
+            if model_key not in models:
+                models[model_key] = {
+                    "model": model_key,
+                    "asset_type": asset_type or "Unknown",
+                    "expected": 0,
+                    "scanned": 0,
+                    "remaining": 0
+                }
+
+            models[model_key]["expected"] += count
+            models[model_key]["scanned"] += scanned_count
+            models[model_key]["remaining"] = models[model_key]["expected"] - models[model_key]["scanned"]
+
+        # Sort by remaining (most missing first), then by expected count
+        sorted_models = sorted(
+            models.values(),
+            key=lambda x: (-x["remaining"], -x["expected"])
+        )
+
+        # Also group by asset_type
+        by_type = {}
+        for m in sorted_models:
+            atype = m["asset_type"]
+            if atype not in by_type:
+                by_type[atype] = {
+                    "asset_type": atype,
+                    "expected": 0,
+                    "scanned": 0,
+                    "remaining": 0,
+                    "models": []
+                }
+            by_type[atype]["expected"] += m["expected"]
+            by_type[atype]["scanned"] += m["scanned"]
+            by_type[atype]["remaining"] += m["remaining"]
+            by_type[atype]["models"].append(m)
+
+        sorted_types = sorted(
+            by_type.values(),
+            key=lambda x: (-x["remaining"], -x["expected"])
+        )
+
+        return {
+            "session_id": session_id,
+            "site_code": session.site_code,
+            "by_model": sorted_models,
+            "by_type": sorted_types,
+            "total_expected": session.expected_count,
+            "total_scanned": session.found_count,
+            "total_remaining": session.expected_count - session.found_count
+        }
+
     def get_scanned_items(
         self,
         session_id: str,

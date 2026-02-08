@@ -45,6 +45,21 @@ export interface Asset {
   cost_per_month: number | null
   created_at: string
   updated_at: string
+  // Additional fields from master data
+  hsn?: string | null
+  mac_address?: string | null
+  imei?: string | null
+  manufacturer?: string | null
+  mdm_device_id?: string | null
+  mdm_enrollment_status?: string | null
+  mdm_last_seen?: string | null
+  mdm_last_sync?: string | null
+  mdm_days_since_connect?: number | null
+  mdm_os_version?: string | null
+  mdm_device_name?: string | null
+  source?: string | null
+  notes?: string | null
+  is_deleted?: boolean
 }
 
 // Audit types

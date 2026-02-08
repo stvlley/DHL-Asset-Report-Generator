@@ -813,6 +813,37 @@ export const scanAuditApi = {
     })
     return response.data
   },
+
+  getModelBreakdown: async (sessionId: string): Promise<{
+    session_id: string
+    site_code: string
+    by_model: Array<{
+      model: string
+      asset_type: string
+      expected: number
+      scanned: number
+      remaining: number
+    }>
+    by_type: Array<{
+      asset_type: string
+      expected: number
+      scanned: number
+      remaining: number
+      models: Array<{
+        model: string
+        asset_type: string
+        expected: number
+        scanned: number
+        remaining: number
+      }>
+    }>
+    total_expected: number
+    total_scanned: number
+    total_remaining: number
+  }> => {
+    const response = await api.get(`/scan/sessions/${sessionId}/model-breakdown`)
+    return response.data
+  },
 }
 
 export default api
