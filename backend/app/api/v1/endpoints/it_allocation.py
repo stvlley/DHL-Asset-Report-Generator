@@ -141,6 +141,44 @@ async def get_snapshot(
     return snapshot
 
 
+@router.delete("/snapshots/{snapshot_id}")
+async def delete_snapshot(
+    snapshot_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    """
+    Delete an IT Allocation snapshot and all its devices.
+
+    Admin only. This permanently removes the snapshot data.
+    """
+    from app.models.it_allocation import ITAllocationSnapshot, ITAllocationDevice
+
+    snapshot = db.query(ITAllocationSnapshot).filter(
+        ITAllocationSnapshot.snapshot_id == snapshot_id
+    ).first()
+
+    if not snapshot:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Snapshot not found"
+        )
+
+    # Delete associated devices first
+    db.query(ITAllocationDevice).filter(
+        ITAllocationDevice.snapshot_id == snapshot_id
+    ).delete()
+
+    # Delete the snapshot
+    db.delete(snapshot)
+    db.commit()
+
+    return {
+        "status": "deleted",
+        "message": f"Snapshot {snapshot_id} and all associated devices deleted"
+    }
+
+
 @router.get("/snapshots/{snapshot_id}/devices", response_model=List[ITAllocationDeviceResponse])
 async def get_snapshot_devices(
     snapshot_id: str,

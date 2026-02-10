@@ -3,7 +3,7 @@ API v1 package.
 """
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import auth, sites, assets, audits, variances, dashboard, it_allocation, master_data, settings, scan_audit, pbi_import, reports
+from app.api.v1.endpoints import auth, sites, assets, audits, variances, dashboard, it_allocation, master_data, settings, scan_audit, pbi_import, reports, users
 
 api_router = APIRouter()
 
@@ -19,3 +19,4 @@ api_router.include_router(settings.router, prefix="/settings", tags=["Settings"]
 api_router.include_router(scan_audit.router, prefix="/scan", tags=["Scan Audit"])
 api_router.include_router(pbi_import.router, prefix="/pbi", tags=["PBI/SOTI Import"])
 api_router.include_router(reports.router, prefix="/reports", tags=["Reports"])
+api_router.include_router(users.router, prefix="/users", tags=["User Management"])

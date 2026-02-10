@@ -222,3 +222,51 @@ async def get_connection_summary(
 
     pbi_service = PBIImportService(db)
     return pbi_service.get_connection_summary(site_code)
+
+
+@router.delete("/snapshots/{snapshot_id}")
+async def delete_pbi_snapshot(
+    snapshot_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Delete a PBI snapshot and all its devices.
+
+    Admin only. This permanently removes the snapshot data.
+    """
+    from app.models.user import UserRole
+    from app.models.pbi_snapshot import PBISnapshot, PBIDevice
+
+    # Admin only
+    if current_user.role != UserRole.ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required"
+        )
+
+    snapshot = db.query(PBISnapshot).filter(
+        PBISnapshot.snapshot_id == snapshot_id
+    ).first()
+
+    if not snapshot:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Snapshot not found"
+        )
+
+    site_code = snapshot.site_code
+
+    # Delete associated devices first
+    db.query(PBIDevice).filter(
+        PBIDevice.snapshot_id == snapshot_id
+    ).delete()
+
+    # Delete the snapshot
+    db.delete(snapshot)
+    db.commit()
+
+    return {
+        "status": "deleted",
+        "message": f"PBI Snapshot {snapshot_id} for site {site_code} deleted"
+    }

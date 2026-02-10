@@ -16,6 +16,8 @@ import ScanAuditPage from './pages/ScanAuditPage'
 import PBIImportPage from './pages/PBIImportPage'
 import AuditorWizardPage from './pages/auditor/AuditorWizardPage'
 import VariancesPage from './pages/VariancesPage'
+import UserManagementPage from './pages/UserManagementPage'
+import SettingsPage from './pages/SettingsPage'
 
 /**
  * Protected route that requires authentication.
@@ -151,6 +153,22 @@ function App() {
             element={
               <RoleGuard allowedRoles={['admin']}>
                 <SitesPage />
+              </RoleGuard>
+            }
+          />
+          <Route
+            path="users"
+            element={
+              <RoleGuard allowedRoles={['admin']}>
+                <UserManagementPage />
+              </RoleGuard>
+            }
+          />
+          <Route
+            path="settings"
+            element={
+              <RoleGuard allowedRoles={['admin']}>
+                <SettingsPage />
               </RoleGuard>
             }
           />

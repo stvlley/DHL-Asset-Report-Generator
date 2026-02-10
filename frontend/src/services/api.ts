@@ -3,6 +3,7 @@ import { useAuthStore } from '../hooks/useAuthStore'
 import type {
   AuthTokens,
   User,
+  UserRole,
   Site,
   Asset,
   Audit,
@@ -121,6 +122,15 @@ export const sitesApi = {
     const response = await api.post<Site>('/sites', site)
     return response.data
   },
+
+  update: async (siteCode: string, data: Partial<Omit<Site, 'site_code' | 'created_at'>>): Promise<Site> => {
+    const response = await api.put<Site>(`/sites/${siteCode}`, data)
+    return response.data
+  },
+
+  delete: async (siteCode: string): Promise<void> => {
+    await api.delete(`/sites/${siteCode}`)
+  },
 }
 
 // Master Data API
@@ -231,6 +241,11 @@ export const auditsApi = {
 
   exportExcelUrl: (auditId: string): string => {
     return `${API_BASE_URL}/audits/${auditId}/reports/export-excel`
+  },
+
+  delete: async (auditId: string): Promise<{ status: string; message: string }> => {
+    const response = await api.delete(`/audits/${auditId}`)
+    return response.data
   },
 }
 
@@ -658,6 +673,11 @@ export const itAllocationApi = {
     const response = await api.get(`/it-allocation/site-gl-mappings/${siteCode}/validate`)
     return response.data
   },
+
+  deleteSnapshot: async (snapshotId: string): Promise<{ status: string; message: string }> => {
+    const response = await api.delete(`/it-allocation/snapshots/${snapshotId}`)
+    return response.data
+  },
 }
 
 // Scan Audit API
@@ -955,6 +975,11 @@ export const pbiApi = {
     const response = await api.get<PBIConnectionSummary>(`/pbi/summary/${siteCode}`)
     return response.data
   },
+
+  deleteSnapshot: async (snapshotId: string): Promise<{ status: string; message: string }> => {
+    const response = await api.delete(`/pbi/snapshots/${snapshotId}`)
+    return response.data
+  },
 }
 
 // Reports API
@@ -1020,6 +1045,70 @@ export const reportsApi = {
     const response = await api.post('/reports/test-email', null, {
       params: { recipient },
     })
+    return response.data
+  },
+}
+
+// User Management API (Admin only)
+export const usersApi = {
+  list: async (params?: {
+    role?: string
+    is_active?: boolean
+    search?: string
+  }): Promise<User[]> => {
+    const response = await api.get<User[]>('/users', { params })
+    return response.data
+  },
+
+  get: async (userId: string): Promise<User> => {
+    const response = await api.get<User>(`/users/${userId}`)
+    return response.data
+  },
+
+  create: async (data: {
+    email: string
+    password: string
+    full_name?: string
+    role?: UserRole
+    assigned_sites?: string[]
+    assigned_region?: string
+  }): Promise<User> => {
+    const response = await api.post<User>('/users', data)
+    return response.data
+  },
+
+  update: async (
+    userId: string,
+    data: {
+      email?: string
+      full_name?: string
+      role?: UserRole
+      assigned_sites?: string[]
+      assigned_region?: string
+      is_active?: boolean
+    }
+  ): Promise<User> => {
+    const response = await api.put<User>(`/users/${userId}`, data)
+    return response.data
+  },
+
+  delete: async (userId: string): Promise<{ status: string; message: string }> => {
+    const response = await api.delete(`/users/${userId}`)
+    return response.data
+  },
+
+  resetPassword: async (
+    userId: string,
+    newPassword: string
+  ): Promise<{ status: string; message: string }> => {
+    const response = await api.post(`/users/${userId}/reset-password`, {
+      new_password: newPassword,
+    })
+    return response.data
+  },
+
+  unlock: async (userId: string): Promise<{ status: string; message: string }> => {
+    const response = await api.post(`/users/${userId}/unlock`)
     return response.data
   },
 }
