@@ -10,6 +10,8 @@ from app.models.variance import Variance
 from app.models.audit_log import AuditLog
 from app.models.it_allocation import ITAllocationSnapshot, ITAllocationDevice, SiteGLMapping
 from app.models.scan_audit import ScanSession, ScanResult
+from app.models.pbi_snapshot import PBISnapshot, PBIDevice
+from app.models.app_settings import AppSettings
 
 __all__ = [
     "User",
@@ -26,4 +28,7 @@ __all__ = [
     "SiteGLMapping",
     "ScanSession",
     "ScanResult",
+    "PBISnapshot",
+    "PBIDevice",
+    "AppSettings",
 ]

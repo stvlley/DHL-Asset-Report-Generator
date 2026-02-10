@@ -11,7 +11,10 @@ export interface User {
   last_login: string | null
 }
 
-export type UserRole = 'admin' | 'site_operations' | 'site_manager' | 'regional_director'
+// Primary roles
+export type UserRole = 'admin' | 'super_user' | 'auditor' |
+  // Deprecated roles (kept for backward compatibility)
+  'site_operations' | 'site_manager' | 'regional_director'
 
 export interface AuthTokens {
   access_token: string
@@ -307,4 +310,141 @@ export interface SiteGLMapping {
   notes: string | null
   created_at: string
   updated_at: string
+}
+
+// KLS Dashboard Types (4-KPI format)
+export interface KLSDashboardKPIs {
+  site_code: string
+  site_name: string
+  audit_date: string | null
+  auditor: string | null
+  audit_period: string
+  report_generated: string
+
+  // KPI 1: On-Site Total
+  on_site_total: number
+  good_count: number
+  bad_count: number
+  rma_count: number
+  lost_count: number
+
+  // KPI 2: IT Allocation Variance
+  it_allocation_total: number
+  it_allocation_variance: number
+  it_allocation_variance_comment: string | null
+
+  // KPI 3: PBI/SOTI Variance
+  pbi_total: number
+  pbi_variance: number
+  pbi_variance_comment: string | null
+  pbi_connected: number
+  pbi_disconnected: number
+
+  // KPI 4: Inactive Devices
+  inactive_threshold_days: number
+  inactive_device_count: number
+
+  // Asset inventory breakdown
+  inventory_by_type: AssetInventoryByType[]
+
+  // Workflow status
+  workflow: WorkflowStatus
+
+  // Data freshness
+  it_allocation_snapshot: string | null
+  pbi_snapshot: string | null
+}
+
+export interface AssetInventoryByType {
+  device_type: string
+  prior_count: number
+  good: number
+  bad: number
+  rma: number
+  lost: number
+  pbi_total: number
+  pbi_report_diff: number
+  current_count: number
+  change: number
+}
+
+export interface WorkflowStatus {
+  audit_due_date: string
+  internal_review_due: string
+  report_deadline: string
+  audit_completed: boolean
+  review_completed: boolean
+  report_sent: boolean
+  days_until_due: number
+}
+
+export interface KLSPortfolioSummary {
+  generated_at: string
+  totals: {
+    on_site_total: number
+    it_allocation_total: number
+    pbi_total: number
+    inactive_count: number
+    sites_count: number
+  }
+  it_allocation_variance: number
+  pbi_variance: number
+  sites: KLSDashboardKPIs[]
+}
+
+// PBI/SOTI Types
+export interface PBISnapshot {
+  snapshot_id: string
+  site_code: string
+  period: number
+  year: number
+  upload_timestamp: string | null
+  file_name: string | null
+  total_records: number
+  connected_count: number
+  disconnected_count: number
+  inactive_threshold_days: number
+}
+
+export interface PBIDevice {
+  device_id: number
+  serial_number: string
+  model: string | null
+  connection_status: string | null
+  days_since_connect: number | null
+  justification: string | null
+  ticket_number: string | null
+  justification_date: string | null
+}
+
+export interface PBIConnectionSummary {
+  site_code: string
+  has_data: boolean
+  total: number
+  connected: number
+  disconnected: number
+  inactive_threshold_days: number
+  snapshot_date: string | null
+  snapshot_id?: string
+  period?: string
+}
+
+export interface PBIUploadResponse {
+  status: string
+  snapshot_id?: string
+  message: string
+  total_records: number
+  connected_count: number
+  disconnected_count: number
+  inactive_threshold_days: number
+  errors: { row?: number; error: string }[]
+}
+
+// Report Recipients
+export interface ReportRecipients {
+  site_code: string
+  director_email: string | null
+  gm_emails: string | null
+  report_recipients: string | null
+  all_recipients: string[]
 }

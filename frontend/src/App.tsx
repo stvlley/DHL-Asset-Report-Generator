@@ -1,5 +1,8 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { useAuthStore } from './hooks/useAuthStore'
+import { usePermissions } from './hooks/usePermissions'
+import { normalizeRole } from './config/permissions'
+import { getDefaultRouteForRole } from './config/navigation'
 import Layout from './components/Layout'
 import LoginPage from './pages/LoginPage'
 import DashboardPage from './pages/DashboardPage'
@@ -10,7 +13,13 @@ import MasterDataPage from './pages/MasterDataPage'
 import SitesPage from './pages/SitesPage'
 import ITAllocationPage from './pages/ITAllocationPage'
 import ScanAuditPage from './pages/ScanAuditPage'
+import PBIImportPage from './pages/PBIImportPage'
+import AuditorWizardPage from './pages/auditor/AuditorWizardPage'
+import VariancesPage from './pages/VariancesPage'
 
+/**
+ * Protected route that requires authentication.
+ */
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuthStore()
 
@@ -19,6 +28,47 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   }
 
   return <>{children}</>
+}
+
+/**
+ * Route guard that checks role-based permissions.
+ */
+function RoleGuard({
+  children,
+  allowedRoles,
+}: {
+  children: React.ReactNode
+  allowedRoles: ('admin' | 'super_user' | 'auditor')[]
+}) {
+  const { user } = useAuthStore()
+  const { getDefaultRoute } = usePermissions()
+
+  if (!user) {
+    return <Navigate to="/login" replace />
+  }
+
+  const normalizedRole = normalizeRole(user.role)
+
+  if (!allowedRoles.includes(normalizedRole)) {
+    // Redirect to user's default page if not authorized
+    return <Navigate to={getDefaultRoute()} replace />
+  }
+
+  return <>{children}</>
+}
+
+/**
+ * Redirect to the appropriate default route based on user role.
+ */
+function RoleBasedRedirect() {
+  const { user } = useAuthStore()
+
+  if (!user) {
+    return <Navigate to="/login" replace />
+  }
+
+  const defaultRoute = getDefaultRouteForRole(user.role)
+  return <Navigate to={defaultRoute} replace />
 }
 
 function App() {
@@ -34,15 +84,104 @@ function App() {
             </ProtectedRoute>
           }
         >
-          <Route index element={<Navigate to="/dashboard" replace />} />
-          <Route path="dashboard" element={<DashboardPage />} />
-          <Route path="upload" element={<UploadPage />} />
-          <Route path="audits" element={<AuditsPage />} />
-          <Route path="audits/:auditId" element={<AuditDetailPage />} />
-          <Route path="master-data" element={<MasterDataPage />} />
-          <Route path="sites" element={<SitesPage />} />
-          <Route path="it-allocation" element={<ITAllocationPage />} />
-          <Route path="scan-audit" element={<ScanAuditPage />} />
+          {/* Role-based default redirect */}
+          <Route index element={<RoleBasedRedirect />} />
+
+          {/* Admin + Super User routes */}
+          <Route
+            path="dashboard"
+            element={
+              <RoleGuard allowedRoles={['admin', 'super_user']}>
+                <DashboardPage />
+              </RoleGuard>
+            }
+          />
+          <Route
+            path="upload"
+            element={
+              <RoleGuard allowedRoles={['admin', 'super_user']}>
+                <UploadPage />
+              </RoleGuard>
+            }
+          />
+          <Route
+            path="audits"
+            element={
+              <RoleGuard allowedRoles={['admin', 'super_user']}>
+                <AuditsPage />
+              </RoleGuard>
+            }
+          />
+          <Route
+            path="audits/:auditId"
+            element={
+              <RoleGuard allowedRoles={['admin', 'super_user', 'auditor']}>
+                <AuditDetailPage />
+              </RoleGuard>
+            }
+          />
+          <Route
+            path="master-data"
+            element={
+              <RoleGuard allowedRoles={['admin', 'super_user']}>
+                <MasterDataPage />
+              </RoleGuard>
+            }
+          />
+          <Route
+            path="it-allocation"
+            element={
+              <RoleGuard allowedRoles={['admin', 'super_user']}>
+                <ITAllocationPage />
+              </RoleGuard>
+            }
+          />
+          <Route
+            path="pbi-import"
+            element={
+              <RoleGuard allowedRoles={['admin', 'super_user']}>
+                <PBIImportPage />
+              </RoleGuard>
+            }
+          />
+
+          {/* Admin only routes */}
+          <Route
+            path="sites"
+            element={
+              <RoleGuard allowedRoles={['admin']}>
+                <SitesPage />
+              </RoleGuard>
+            }
+          />
+
+          {/* All authenticated users (scan audit) */}
+          <Route
+            path="scan-audit"
+            element={
+              <RoleGuard allowedRoles={['admin', 'super_user', 'auditor']}>
+                <ScanAuditPage />
+              </RoleGuard>
+            }
+          />
+
+          {/* Auditor wizard routes */}
+          <Route
+            path="my-audits"
+            element={
+              <RoleGuard allowedRoles={['admin', 'super_user', 'auditor']}>
+                <AuditorWizardPage />
+              </RoleGuard>
+            }
+          />
+          <Route
+            path="variances"
+            element={
+              <RoleGuard allowedRoles={['admin', 'super_user', 'auditor']}>
+                <VariancesPage />
+              </RoleGuard>
+            }
+          />
         </Route>
       </Routes>
     </BrowserRouter>

@@ -21,6 +21,12 @@ class Site(Base):
     country = Column(String(10), default="US")
     primary_contact = Column(String(100))
     contact_email = Column(String(255))
+
+    # Report email recipients
+    director_email = Column(String(255), nullable=True)
+    gm_emails = Column(Text, nullable=True)  # JSON array of GM email addresses
+    report_recipients = Column(Text, nullable=True)  # JSON array of additional recipients
+
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))

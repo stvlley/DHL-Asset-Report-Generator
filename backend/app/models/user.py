@@ -11,10 +11,15 @@ from app.core.database import Base
 
 
 class UserRole(str, enum.Enum):
+    # Primary roles
     ADMIN = "admin"
-    SITE_OPERATIONS = "site_operations"
-    SITE_MANAGER = "site_manager"
-    REGIONAL_DIRECTOR = "regional_director"
+    SUPER_USER = "super_user"  # Site systems member - manages data, approves audits
+    AUDITOR = "auditor"        # Site personnel - scans assets, reviews variances
+
+    # Deprecated roles (kept for migration compatibility)
+    SITE_OPERATIONS = "site_operations"    # Maps to AUDITOR
+    SITE_MANAGER = "site_manager"          # Maps to SUPER_USER
+    REGIONAL_DIRECTOR = "regional_director"  # Maps to SUPER_USER
 
 
 class User(Base):
@@ -24,7 +29,7 @@ class User(Base):
     email = Column(String(255), unique=True, nullable=False, index=True)
     hashed_password = Column(String(255), nullable=True)  # NULL if SSO only
     full_name = Column(String(100))
-    role = Column(Enum(UserRole), nullable=False, default=UserRole.SITE_OPERATIONS)
+    role = Column(Enum(UserRole), nullable=False, default=UserRole.AUDITOR)
     # Store as JSON string for SQLite compatibility
     _assigned_sites = Column("assigned_sites", Text, default="[]")
     assigned_region = Column(String(50), nullable=True)

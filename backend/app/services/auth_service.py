@@ -176,9 +176,12 @@ class AuthService:
         site_code: Optional[str] = None
     ) -> bool:
         """Check if user has permission, optionally for specific site."""
+        # New role-based permissions
         PERMISSIONS = {
+            # Admin has all permissions
             UserRole.ADMIN: [
                 "view_all_sites",
+                "view_assigned_sites",
                 "upload_master_data",
                 "manage_assets",
                 "manage_settings",
@@ -186,38 +189,82 @@ class AuthService:
                 "view_audit_log",
                 "delete_audits",
                 "upload_audit",
+                "start_scan_session",
+                "submit_audit",
                 "view_reports",
                 "approve_action_items",
                 "update_action_items",
+                "upload_it_allocation",
+                "upload_pbi_import",
+                "send_reports",
+                "approve_audits",
+                "manage_site_data",
+                "configure_workflow_settings",
             ],
-            UserRole.REGIONAL_DIRECTOR: [
-                "view_region_sites",
-                "view_all_reports",
-                "view_dashboard",
+            # Super User: Site systems member - manages data, approves audits
+            UserRole.SUPER_USER: [
+                "view_assigned_sites",
+                "manage_assets",
+                "view_audit_log",
+                "start_scan_session",
+                "submit_audit",
+                "upload_audit",
                 "view_reports",
+                "approve_action_items",
+                "update_action_items",
+                "upload_it_allocation",
+                "upload_pbi_import",
+                "send_reports",
+                "approve_audits",
+                "manage_site_data",
+            ],
+            # Auditor: Scans assets, reviews variances
+            UserRole.AUDITOR: [
+                "view_assigned_sites",
+                "start_scan_session",
+                "submit_audit",
+                "upload_audit",
+                "view_reports",
+                "update_action_items",
+            ],
+            # Deprecated roles - map to new permissions for backward compatibility
+            UserRole.REGIONAL_DIRECTOR: [
+                "view_assigned_sites",
+                "view_reports",
+                "approve_action_items",
             ],
             UserRole.SITE_MANAGER: [
-                "view_own_site",
-                "approve_action_items",
-                "view_reports",
+                "view_assigned_sites",
+                "manage_assets",
+                "view_audit_log",
+                "start_scan_session",
+                "submit_audit",
                 "upload_audit",
+                "view_reports",
+                "approve_action_items",
                 "update_action_items",
+                "upload_it_allocation",
+                "upload_pbi_import",
+                "send_reports",
+                "approve_audits",
+                "manage_site_data",
             ],
             UserRole.SITE_OPERATIONS: [
+                "view_assigned_sites",
+                "start_scan_session",
+                "submit_audit",
                 "upload_audit",
-                "view_own_site",
-                "update_action_items",
                 "view_reports",
+                "update_action_items",
             ],
         }
 
         if permission not in PERMISSIONS.get(user.role, []):
             return False
 
-        # Site-specific access check
-        if site_code:
-            if user.role in (UserRole.SITE_OPERATIONS, UserRole.SITE_MANAGER):
-                if site_code not in (user.assigned_sites or []):
-                    return False
+        # Site-specific access check for non-admin roles
+        if site_code and user.role != UserRole.ADMIN:
+            if site_code not in (user.assigned_sites or []):
+                return False
 
         return True

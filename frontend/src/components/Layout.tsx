@@ -1,34 +1,22 @@
 import { useState } from 'react'
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../hooks/useAuthStore'
+import { usePermissions } from '../hooks/usePermissions'
 import {
-  LayoutDashboard,
-  Upload,
-  FileText,
-  Database,
-  Building2,
-  DollarSign,
   LogOut,
   Menu,
   X,
   User,
-  Scan,
 } from 'lucide-react'
-
-const navigation = [
-  { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-  { name: 'Scan Audit', href: '/scan-audit', icon: Scan },
-  { name: 'Upload Audit', href: '/upload', icon: Upload },
-  { name: 'Audits', href: '/audits', icon: FileText },
-  { name: 'Master Data', href: '/master-data', icon: Database },
-  { name: 'Sites', href: '/sites', icon: Building2 },
-  { name: 'IT Allocation', href: '/it-allocation', icon: DollarSign },
-]
 
 export default function Layout() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const { user, logout } = useAuthStore()
+  const { getNavigation, getRoleName } = usePermissions()
   const navigate = useNavigate()
+
+  // Get role-based navigation
+  const navigation = getNavigation()
 
   const handleLogout = () => {
     logout()
@@ -116,8 +104,8 @@ export default function Layout() {
                 <p className="text-sm font-medium text-gray-700 truncate">
                   {user?.full_name || user?.email}
                 </p>
-                <p className="text-xs text-gray-500 truncate capitalize">
-                  {user?.role?.replace('_', ' ')}
+                <p className="text-xs text-gray-500 truncate">
+                  {getRoleName()}
                 </p>
               </div>
               <button

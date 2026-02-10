@@ -18,6 +18,15 @@ import type {
   DeviceLookupResponse,
   GLStringSummary,
   SiteGLMapping,
+  KLSDashboardKPIs,
+  KLSPortfolioSummary,
+  AssetInventoryByType,
+  WorkflowStatus,
+  PBISnapshot,
+  PBIDevice,
+  PBIConnectionSummary,
+  PBIUploadResponse,
+  ReportRecipients,
 } from '../types'
 
 const API_BASE_URL = '/api/v1'
@@ -859,6 +868,194 @@ export const scanAuditApi = {
     total_remaining: number
   }> => {
     const response = await api.get(`/scan/sessions/${sessionId}/model-breakdown`)
+    return response.data
+  },
+}
+
+// KLS Dashboard API (4-KPI format)
+export const klsDashboardApi = {
+  getSiteSummary: async (siteCode: string): Promise<KLSDashboardKPIs> => {
+    const response = await api.get<KLSDashboardKPIs>(`/dashboard/kls-summary/${siteCode}`)
+    return response.data
+  },
+
+  getPortfolioSummary: async (): Promise<KLSPortfolioSummary> => {
+    const response = await api.get<KLSPortfolioSummary>('/dashboard/kls-summary')
+    return response.data
+  },
+
+  getInventoryByType: async (siteCode: string): Promise<AssetInventoryByType[]> => {
+    const response = await api.get<AssetInventoryByType[]>(
+      `/dashboard/inventory-by-type/${siteCode}`
+    )
+    return response.data
+  },
+
+  getWorkflowStatus: async (siteCode: string): Promise<WorkflowStatus> => {
+    const response = await api.get<WorkflowStatus>(`/dashboard/workflow-status/${siteCode}`)
+    return response.data
+  },
+}
+
+// PBI/SOTI Import API
+export const pbiApi = {
+  upload: async (file: File, siteCode: string): Promise<PBIUploadResponse> => {
+    const formData = new FormData()
+    formData.append('file', file)
+
+    const response = await api.post<PBIUploadResponse>(
+      `/pbi/upload?site_code=${encodeURIComponent(siteCode)}`,
+      formData,
+      { headers: { 'Content-Type': 'multipart/form-data' } }
+    )
+    return response.data
+  },
+
+  listSnapshots: async (siteCode: string, limit: number = 12): Promise<{
+    site_code: string
+    count: number
+    snapshots: PBISnapshot[]
+  }> => {
+    const response = await api.get(`/pbi/snapshots/${siteCode}`, { params: { limit } })
+    return response.data
+  },
+
+  getInactiveDevices: async (siteCode: string, days?: number): Promise<{
+    site_code: string
+    inactive_threshold_days: number
+    count: number
+    devices: PBIDevice[]
+  }> => {
+    const response = await api.get(`/pbi/inactive/${siteCode}`, {
+      params: days ? { days } : {},
+    })
+    return response.data
+  },
+
+  addJustification: async (
+    deviceId: number,
+    justification: string,
+    ticketNumber?: string
+  ): Promise<{
+    status: string
+    device_id: number
+    serial_number: string
+    justification: string
+    ticket_number: string | null
+  }> => {
+    const params = new URLSearchParams()
+    params.append('justification', justification)
+    if (ticketNumber) params.append('ticket_number', ticketNumber)
+
+    const response = await api.post(`/pbi/justification/${deviceId}?${params}`)
+    return response.data
+  },
+
+  getConnectionSummary: async (siteCode: string): Promise<PBIConnectionSummary> => {
+    const response = await api.get<PBIConnectionSummary>(`/pbi/summary/${siteCode}`)
+    return response.data
+  },
+}
+
+// Reports API
+export const reportsApi = {
+  generate: async (siteCode: string): Promise<{
+    status: string
+    site_code: string
+    file_path: string
+    message: string
+  }> => {
+    const response = await api.post(`/reports/generate/${siteCode}`)
+    return response.data
+  },
+
+  send: async (
+    siteCode: string,
+    options?: {
+      recipients?: string[]
+      subject?: string
+      body?: string
+      period?: string
+    }
+  ): Promise<{
+    status: string
+    message: string
+    sent: boolean
+    recipients?: string[]
+  }> => {
+    const response = await api.post(`/reports/send/${siteCode}`, options || {})
+    return response.data
+  },
+
+  getRecipients: async (siteCode: string): Promise<ReportRecipients> => {
+    const response = await api.get<ReportRecipients>(`/reports/recipients/${siteCode}`)
+    return response.data
+  },
+
+  updateRecipients: async (
+    siteCode: string,
+    update: {
+      director_email?: string
+      gm_emails?: string[]
+      report_recipients?: string[]
+    }
+  ): Promise<{ status: string; site_code: string; message: string }> => {
+    const response = await api.put(`/reports/recipients/${siteCode}`, update)
+    return response.data
+  },
+
+  getEmailStatus: async (): Promise<{
+    configured: boolean
+    from_email: string | null
+  }> => {
+    const response = await api.get('/reports/email-status')
+    return response.data
+  },
+
+  sendTestEmail: async (recipient: string): Promise<{
+    status: string
+    message: string
+    sent: boolean
+  }> => {
+    const response = await api.post('/reports/test-email', null, {
+      params: { recipient },
+    })
+    return response.data
+  },
+}
+
+// Extended Settings API
+export const appSettingsApi = {
+  getInactiveThreshold: async (): Promise<{
+    inactive_threshold_days: number
+    description: string
+  }> => {
+    const response = await api.get('/settings/inactive-threshold')
+    return response.data
+  },
+
+  setInactiveThreshold: async (days: number): Promise<{
+    status: string
+    inactive_threshold_days: number
+    message: string
+  }> => {
+    const response = await api.put('/settings/inactive-threshold', null, {
+      params: { days },
+    })
+    return response.data
+  },
+
+  getAllSettings: async (): Promise<{
+    settings: Array<{
+      key: string
+      value: unknown
+      raw_value: string
+      type: string
+      description: string
+      updated_at: string | null
+    }>
+  }> => {
+    const response = await api.get('/settings/all')
     return response.data
   },
 }

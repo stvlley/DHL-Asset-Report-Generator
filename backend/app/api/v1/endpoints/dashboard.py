@@ -199,3 +199,142 @@ async def get_trends(
         "site_code": site_code,
         "trends": trends,
     }
+
+
+# ============================================================================
+# KLS Dashboard Endpoints (4-KPI format)
+# ============================================================================
+
+@router.get("/kls-summary/{site_code}")
+async def get_kls_site_summary(
+    site_code: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get KLS-format dashboard summary for a specific site.
+
+    Returns the 4 KPIs:
+    - On-Site Total (physical audit count)
+    - IT Allocation variance
+    - PBI/SOTI variance
+    - Inactive device count
+    """
+    from app.services.kls_report_service import KLSReportService
+
+    auth_service = AuthService(db)
+
+    # Check site access
+    if not auth_service.check_permission(current_user, "view_all_sites"):
+        if site_code not in (current_user.assigned_sites or []):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied to this site"
+            )
+
+    try:
+        kls_service = KLSReportService(db)
+        return kls_service.get_kls_dashboard_summary(site_code)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e)
+        )
+
+
+@router.get("/kls-summary")
+async def get_kls_portfolio_summary(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get KLS-format summary across all sites.
+
+    Returns aggregated 4 KPIs for the portfolio.
+    """
+    from app.services.kls_report_service import KLSReportService
+
+    auth_service = AuthService(db)
+
+    if not auth_service.check_permission(current_user, "view_dashboard"):
+        if not current_user.assigned_sites:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="No sites assigned"
+            )
+
+    kls_service = KLSReportService(db)
+    summary = kls_service.get_portfolio_kls_summary()
+
+    # Filter by user access if not admin
+    if not auth_service.check_permission(current_user, "view_all_sites"):
+        if current_user.assigned_sites:
+            summary["sites"] = [
+                s for s in summary["sites"]
+                if s["site_code"] in current_user.assigned_sites
+            ]
+            # Recalculate totals
+            summary["totals"]["sites_count"] = len(summary["sites"])
+            summary["totals"]["on_site_total"] = sum(
+                s.get("on_site_total", 0) for s in summary["sites"]
+            )
+            summary["totals"]["it_allocation_total"] = sum(
+                s.get("it_allocation_total", 0) for s in summary["sites"]
+            )
+            summary["totals"]["pbi_total"] = sum(
+                s.get("pbi_total", 0) for s in summary["sites"]
+            )
+            summary["totals"]["inactive_count"] = sum(
+                s.get("inactive_device_count", 0) for s in summary["sites"]
+            )
+
+    return summary
+
+
+@router.get("/inventory-by-type/{site_code}")
+async def get_inventory_by_type(
+    site_code: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get asset inventory breakdown by device type.
+    Matches the KLS Excel format.
+    """
+    from app.services.kls_report_service import KLSReportService
+
+    auth_service = AuthService(db)
+
+    if not auth_service.check_permission(current_user, "view_all_sites"):
+        if site_code not in (current_user.assigned_sites or []):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied"
+            )
+
+    kls_service = KLSReportService(db)
+    return kls_service.get_inventory_by_type(site_code)
+
+
+@router.get("/workflow-status/{site_code}")
+async def get_workflow_status(
+    site_code: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get monthly audit workflow status for a site.
+    """
+    from app.services.kls_report_service import KLSReportService
+
+    auth_service = AuthService(db)
+
+    if not auth_service.check_permission(current_user, "view_all_sites"):
+        if site_code not in (current_user.assigned_sites or []):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied"
+            )
+
+    kls_service = KLSReportService(db)
+    return kls_service.get_workflow_status(site_code)

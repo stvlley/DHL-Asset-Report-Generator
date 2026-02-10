@@ -221,3 +221,92 @@ async def get_mdm_integration_status(
             else "Using manual PBI imports. Configure SOTI API for automatic sync."
         )
     }
+
+
+# ============================================================================
+# Application Settings Endpoints
+# ============================================================================
+
+@router.get("/inactive-threshold")
+async def get_inactive_threshold(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get the configurable inactive device threshold.
+
+    Returns the number of days of inactivity before a device is considered inactive.
+    Default is 30 days.
+    """
+    from app.services.app_settings_service import AppSettingsService
+
+    settings_service = AppSettingsService(db)
+    threshold = settings_service.get_inactive_threshold()
+
+    return {
+        "inactive_threshold_days": threshold,
+        "description": "Days of inactivity before a device is considered inactive"
+    }
+
+
+@router.put("/inactive-threshold")
+async def set_inactive_threshold(
+    days: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Set the inactive device threshold.
+
+    Admin only. Updates the number of days used to determine inactive devices.
+    """
+    from app.services.app_settings_service import AppSettingsService
+
+    auth_service = AuthService(db)
+
+    if not auth_service.check_permission(current_user, "manage_settings"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required"
+        )
+
+    if days < 1 or days > 365:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Threshold must be between 1 and 365 days"
+        )
+
+    settings_service = AppSettingsService(db)
+    settings_service.set_inactive_threshold(days, user_id=current_user.user_id)
+
+    return {
+        "status": "success",
+        "inactive_threshold_days": days,
+        "message": f"Inactive threshold updated to {days} days"
+    }
+
+
+@router.get("/all")
+async def get_all_settings(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get all application settings.
+
+    Admin only. Returns all configurable settings.
+    """
+    from app.services.app_settings_service import AppSettingsService
+
+    auth_service = AuthService(db)
+
+    if not auth_service.check_permission(current_user, "manage_settings"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required"
+        )
+
+    settings_service = AppSettingsService(db)
+    return {
+        "settings": settings_service.get_all_settings()
+    }
