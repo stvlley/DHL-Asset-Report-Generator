@@ -12,12 +12,16 @@ import {
   X,
   Trash2,
   DollarSign,
+  Pencil,
+  AlertTriangle,
 } from 'lucide-react'
 
 export default function SitesPage() {
   const [searchTerm, setSearchTerm] = useState('')
   const [showAddForm, setShowAddForm] = useState(false)
   const [selectedSite, setSelectedSite] = useState<Site | null>(null)
+  const [editingSite, setEditingSite] = useState<Site | null>(null)
+  const [deletingSite, setDeletingSite] = useState<Site | null>(null)
   const [newSite, setNewSite] = useState({
     site_code: '',
     site_name: '',
@@ -25,6 +29,14 @@ export default function SitesPage() {
     region: '',
     address: '',
     primary_contact: '',
+  })
+  const [editFormData, setEditFormData] = useState({
+    site_name: '',
+    account_name: '',
+    region: '',
+    address: '',
+    primary_contact: '',
+    is_active: true,
   })
   const [newGLString, setNewGLString] = useState('')
   const [newGLCategory, setNewGLCategory] = useState('RF HARDWARE')
@@ -66,6 +78,23 @@ export default function SitesPage() {
     },
   })
 
+  const updateMutation = useMutation({
+    mutationFn: ({ siteCode, data }: { siteCode: string; data: typeof editFormData }) =>
+      sitesApi.update(siteCode, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sites'] })
+      setEditingSite(null)
+    },
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: (siteCode: string) => sitesApi.delete(siteCode),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sites'] })
+      setDeletingSite(null)
+    },
+  })
+
   const addGLMappingMutation = useMutation({
     mutationFn: (data: { site_code: string; gl_string: string; category?: string }) =>
       itAllocationApi.createSiteGLMapping(data),
@@ -102,6 +131,28 @@ export default function SitesPage() {
         site_code: selectedSite.site_code,
         gl_string: newGLString,
         category: newGLCategory,
+      })
+    }
+  }
+
+  const openEditModal = (site: Site) => {
+    setEditFormData({
+      site_name: site.site_name,
+      account_name: site.account_name,
+      region: site.region || '',
+      address: site.address || '',
+      primary_contact: site.primary_contact || '',
+      is_active: site.is_active,
+    })
+    setEditingSite(site)
+  }
+
+  const handleEditSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (editingSite) {
+      updateMutation.mutate({
+        siteCode: editingSite.site_code,
+        data: editFormData,
       })
     }
   }
@@ -296,7 +347,7 @@ export default function SitesPage() {
                 )}
               </div>
 
-              <div className="mt-3 pt-3 border-t border-gray-100">
+              <div className="mt-3 pt-3 border-t border-gray-100 flex items-center justify-between">
                 <button
                   onClick={(e) => {
                     e.stopPropagation()
@@ -307,6 +358,30 @@ export default function SitesPage() {
                   <DollarSign className="w-3 h-3 mr-1" />
                   Manage GL Strings
                 </button>
+                {isAdmin && (
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        openEditModal(site)
+                      }}
+                      className="p-1 text-gray-400 hover:text-blue-600"
+                      title="Edit site"
+                    >
+                      <Pencil className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setDeletingSite(site)
+                      }}
+                      className="p-1 text-gray-400 hover:text-red-600"
+                      title="Delete site"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           ))}
@@ -488,6 +563,175 @@ export default function SitesPage() {
               <div className="mt-6 flex justify-end">
                 <button onClick={() => setSelectedSite(null)} className="btn-secondary">
                   Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Site Modal */}
+      {editingSite && (
+        <div className="fixed inset-0 z-50 overflow-y-auto">
+          <div className="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:p-0">
+            <div
+              className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity"
+              onClick={() => setEditingSite(null)}
+            />
+
+            <div className="relative inline-block w-full max-w-lg p-6 my-8 overflow-hidden text-left align-middle transition-all transform bg-white shadow-xl rounded-lg">
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">Edit Site</h3>
+                  <p className="text-sm text-gray-500">{editingSite.site_code}</p>
+                </div>
+                <button
+                  onClick={() => setEditingSite(null)}
+                  className="p-2 text-gray-400 hover:text-gray-600"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <form onSubmit={handleEditSubmit} className="space-y-4">
+                <div>
+                  <label className="label">Site Name *</label>
+                  <input
+                    type="text"
+                    value={editFormData.site_name}
+                    onChange={(e) =>
+                      setEditFormData({ ...editFormData, site_name: e.target.value })
+                    }
+                    className="input"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="label">Account Name *</label>
+                  <input
+                    type="text"
+                    value={editFormData.account_name}
+                    onChange={(e) =>
+                      setEditFormData({ ...editFormData, account_name: e.target.value })
+                    }
+                    className="input"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="label">Region</label>
+                  <input
+                    type="text"
+                    value={editFormData.region}
+                    onChange={(e) =>
+                      setEditFormData({ ...editFormData, region: e.target.value })
+                    }
+                    className="input"
+                  />
+                </div>
+                <div>
+                  <label className="label">Address</label>
+                  <input
+                    type="text"
+                    value={editFormData.address}
+                    onChange={(e) =>
+                      setEditFormData({ ...editFormData, address: e.target.value })
+                    }
+                    className="input"
+                  />
+                </div>
+                <div>
+                  <label className="label">Primary Contact</label>
+                  <input
+                    type="text"
+                    value={editFormData.primary_contact}
+                    onChange={(e) =>
+                      setEditFormData({ ...editFormData, primary_contact: e.target.value })
+                    }
+                    className="input"
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="is_active"
+                    checked={editFormData.is_active}
+                    onChange={(e) =>
+                      setEditFormData({ ...editFormData, is_active: e.target.checked })
+                    }
+                    className="rounded border-gray-300 text-dhl-red focus:ring-dhl-red"
+                  />
+                  <label htmlFor="is_active" className="text-sm text-gray-700">
+                    Site is active
+                  </label>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-4">
+                  <button
+                    type="button"
+                    onClick={() => setEditingSite(null)}
+                    className="btn-secondary"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={updateMutation.isPending}
+                    className="btn-primary"
+                  >
+                    {updateMutation.isPending ? 'Saving...' : 'Save Changes'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deletingSite && (
+        <div className="fixed inset-0 z-50 overflow-y-auto">
+          <div className="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:p-0">
+            <div
+              className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity"
+              onClick={() => setDeletingSite(null)}
+            />
+
+            <div className="relative inline-block w-full max-w-md p-6 my-8 overflow-hidden text-left align-middle transition-all transform bg-white shadow-xl rounded-lg">
+              <div className="flex items-center gap-4 mb-4">
+                <div className="flex-shrink-0 w-12 h-12 rounded-full bg-red-100 flex items-center justify-center">
+                  <AlertTriangle className="w-6 h-6 text-red-600" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">Delete Site</h3>
+                  <p className="text-sm text-gray-500">This action cannot be undone.</p>
+                </div>
+              </div>
+
+              <div className="mb-6">
+                <p className="text-gray-700">
+                  Are you sure you want to delete{' '}
+                  <span className="font-semibold">{deletingSite.site_name}</span> (
+                  {deletingSite.site_code})?
+                </p>
+                <p className="mt-2 text-sm text-red-600">
+                  Warning: This will also remove all GL string mappings and may affect audit records.
+                </p>
+              </div>
+
+              <div className="flex justify-end gap-2">
+                <button
+                  onClick={() => setDeletingSite(null)}
+                  className="btn-secondary"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => deleteMutation.mutate(deletingSite.site_code)}
+                  disabled={deleteMutation.isPending}
+                  className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50"
+                >
+                  {deleteMutation.isPending ? 'Deleting...' : 'Delete Site'}
                 </button>
               </div>
             </div>

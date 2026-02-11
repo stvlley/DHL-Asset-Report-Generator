@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { auditsApi, variancesApi } from '../services/api'
 import { format } from 'date-fns'
 import type { Variance } from '../types'
+import ReportSection from '../components/audit/ReportSection'
 import {
   ArrowLeft,
   Download,
@@ -358,6 +359,9 @@ export default function AuditDetailPage() {
               </div>
             </div>
           )}
+
+          {/* Report Actions */}
+          <ReportSection siteCode={audit.site_code} auditId={auditId} />
         </>
       )}
 

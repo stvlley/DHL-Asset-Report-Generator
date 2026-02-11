@@ -1,22 +1,124 @@
-import { useState } from 'react'
-import { Outlet, NavLink, useNavigate } from 'react-router-dom'
+import { useState, useEffect } from 'react'
+import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { useAuthStore } from '../hooks/useAuthStore'
 import { usePermissions } from '../hooks/usePermissions'
+import { isNavSection, type NavItem, type NavSection } from '../config/navigation'
 import {
   LogOut,
   Menu,
   X,
   User,
+  ChevronDown,
 } from 'lucide-react'
+
+// Render a single nav item
+function NavItemLink({ item, onClick }: { item: NavItem; onClick?: () => void }) {
+  return (
+    <NavLink
+      to={item.href}
+      onClick={onClick}
+      className={({ isActive }) =>
+        `flex items-center px-4 py-3 text-sm font-medium rounded-md ${
+          isActive
+            ? 'bg-dhl-yellow text-gray-900'
+            : 'text-gray-700 hover:bg-gray-100'
+        }`
+      }
+    >
+      <item.icon className="w-5 h-5 mr-3" />
+      {item.name}
+      {item.badge !== undefined && item.badge > 0 && (
+        <span className="ml-auto bg-dhl-red text-white text-xs px-2 py-0.5 rounded-full">
+          {item.badge}
+        </span>
+      )}
+    </NavLink>
+  )
+}
+
+// Render a collapsible nav section
+function NavSectionGroup({
+  section,
+  isExpanded,
+  onToggle,
+  onItemClick,
+}: {
+  section: NavSection
+  isExpanded: boolean
+  onToggle: () => void
+  onItemClick?: () => void
+}) {
+  const location = useLocation()
+  const isActive = section.items.some((item) => location.pathname.startsWith(item.href))
+
+  return (
+    <div className="mb-1">
+      <button
+        onClick={onToggle}
+        className={`w-full flex items-center justify-between px-4 py-3 text-sm font-medium rounded-md ${
+          isActive && !isExpanded
+            ? 'bg-dhl-yellow/50 text-gray-900'
+            : 'text-gray-700 hover:bg-gray-100'
+        }`}
+      >
+        <div className="flex items-center">
+          <section.icon className="w-5 h-5 mr-3" />
+          {section.name}
+        </div>
+        <ChevronDown
+          className={`w-4 h-4 transition-transform duration-200 ${
+            isExpanded ? 'rotate-180' : ''
+          }`}
+        />
+      </button>
+      {isExpanded && (
+        <div className="ml-4 mt-1 space-y-1">
+          {section.items.map((item) => (
+            <NavItemLink key={item.href} item={item} onClick={onItemClick} />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
 
 export default function Layout() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>(() => {
+    // Load from localStorage
+    const stored = localStorage.getItem('nav-expanded-sections')
+    return stored ? JSON.parse(stored) : { Management: true }
+  })
   const { user, logout } = useAuthStore()
   const { getNavigation, getRoleName } = usePermissions()
   const navigate = useNavigate()
+  const location = useLocation()
 
   // Get role-based navigation
   const navigation = getNavigation()
+
+  // Persist expanded state
+  useEffect(() => {
+    localStorage.setItem('nav-expanded-sections', JSON.stringify(expandedSections))
+  }, [expandedSections])
+
+  // Auto-expand section if current route is in it
+  useEffect(() => {
+    navigation.forEach((item) => {
+      if (isNavSection(item)) {
+        const isInSection = item.items.some((subItem) =>
+          location.pathname.startsWith(subItem.href)
+        )
+        if (isInSection && !expandedSections[item.name]) {
+          setExpandedSections((prev) => ({ ...prev, [item.name]: true }))
+        }
+      }
+    })
+  }, [location.pathname, navigation, expandedSections])
+
+  const toggleSection = (name: string) => {
+    setExpandedSections((prev) => ({ ...prev, [name]: !prev[name] }))
+  }
 
   const handleLogout = () => {
     logout()
@@ -45,24 +147,24 @@ export default function Layout() {
             <X className="w-6 h-6" />
           </button>
         </div>
-        <nav className="mt-4 px-2">
-          {navigation.map((item) => (
-            <NavLink
-              key={item.name}
-              to={item.href}
-              onClick={() => setSidebarOpen(false)}
-              className={({ isActive }) =>
-                `flex items-center px-4 py-3 text-sm font-medium rounded-md mb-1 ${
-                  isActive
-                    ? 'bg-dhl-yellow text-gray-900'
-                    : 'text-gray-700 hover:bg-gray-100'
-                }`
-              }
-            >
-              <item.icon className="w-5 h-5 mr-3" />
-              {item.name}
-            </NavLink>
-          ))}
+        <nav className="mt-4 px-2 space-y-1">
+          {navigation.map((item) =>
+            isNavSection(item) ? (
+              <NavSectionGroup
+                key={item.name}
+                section={item}
+                isExpanded={expandedSections[item.name] ?? false}
+                onToggle={() => toggleSection(item.name)}
+                onItemClick={() => setSidebarOpen(false)}
+              />
+            ) : (
+              <NavItemLink
+                key={item.href}
+                item={item}
+                onClick={() => setSidebarOpen(false)}
+              />
+            )
+          )}
         </nav>
       </div>
 
@@ -75,23 +177,19 @@ export default function Layout() {
           </div>
 
           {/* Navigation */}
-          <nav className="flex-1 mt-4 px-2 space-y-1">
-            {navigation.map((item) => (
-              <NavLink
-                key={item.name}
-                to={item.href}
-                className={({ isActive }) =>
-                  `flex items-center px-4 py-3 text-sm font-medium rounded-md ${
-                    isActive
-                      ? 'bg-dhl-yellow text-gray-900'
-                      : 'text-gray-700 hover:bg-gray-100'
-                  }`
-                }
-              >
-                <item.icon className="w-5 h-5 mr-3" />
-                {item.name}
-              </NavLink>
-            ))}
+          <nav className="flex-1 mt-4 px-2 space-y-1 overflow-y-auto">
+            {navigation.map((item) =>
+              isNavSection(item) ? (
+                <NavSectionGroup
+                  key={item.name}
+                  section={item}
+                  isExpanded={expandedSections[item.name] ?? false}
+                  onToggle={() => toggleSection(item.name)}
+                />
+              ) : (
+                <NavItemLink key={item.href} item={item} />
+              )
+            )}
           </nav>
 
           {/* User section */}

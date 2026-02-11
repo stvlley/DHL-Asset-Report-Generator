@@ -15,6 +15,7 @@ import {
   Settings,
   ClipboardList,
   AlertTriangle,
+  Briefcase,
   type LucideIcon,
 } from 'lucide-react'
 import type { UserRole } from '../types'
@@ -25,6 +26,18 @@ export interface NavItem {
   href: string
   icon: LucideIcon
   badge?: number // For pending items count
+}
+
+export interface NavSection {
+  name: string
+  icon: LucideIcon
+  items: NavItem[]
+}
+
+export type NavigationItem = NavItem | NavSection
+
+export function isNavSection(item: NavigationItem): item is NavSection {
+  return 'items' in item
 }
 
 // Auditor navigation - Linear wizard flow
@@ -43,24 +56,30 @@ const superUserNav: NavItem[] = [
   { name: 'Site Data', href: '/master-data', icon: Database },
 ]
 
-// Admin navigation - Full access
-const adminNav: NavItem[] = [
+// Admin navigation - Full access with Management section
+const adminNav: NavigationItem[] = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { name: 'Scan Audit', href: '/scan-audit', icon: Scan },
   { name: 'Upload Audit', href: '/upload', icon: Upload },
   { name: 'Audits', href: '/audits', icon: FileText },
-  { name: 'Master Data', href: '/master-data', icon: Database },
-  { name: 'Sites', href: '/sites', icon: Building2 },
-  { name: 'IT Allocation', href: '/it-allocation', icon: DollarSign },
-  { name: 'PBI/SOTI Import', href: '/pbi-import', icon: Smartphone },
-  { name: 'Users', href: '/users', icon: Users },
-  { name: 'Settings', href: '/settings', icon: Settings },
+  {
+    name: 'Management',
+    icon: Briefcase,
+    items: [
+      { name: 'Master Data', href: '/master-data', icon: Database },
+      { name: 'Sites', href: '/sites', icon: Building2 },
+      { name: 'IT Allocation', href: '/it-allocation', icon: DollarSign },
+      { name: 'PBI/SOTI Import', href: '/pbi-import', icon: Smartphone },
+      { name: 'Users', href: '/users', icon: Users },
+      { name: 'Settings', href: '/settings', icon: Settings },
+    ],
+  },
 ]
 
 /**
  * Get navigation items for a user's role.
  */
-export function getNavigationForRole(role: UserRole): NavItem[] {
+export function getNavigationForRole(role: UserRole): NavigationItem[] {
   const normalizedRole = normalizeRole(role)
 
   switch (normalizedRole) {
@@ -103,8 +122,13 @@ export function canAccessRoute(role: UserRole, route: string): boolean {
     return true
   }
 
-  // Check if route is in the role's navigation
-  return nav.some(item => route.startsWith(item.href))
+  // Check if route is in the role's navigation (including nested items)
+  return nav.some(item => {
+    if (isNavSection(item)) {
+      return item.items.some(subItem => route.startsWith(subItem.href))
+    }
+    return route.startsWith(item.href)
+  })
 }
 
 /**

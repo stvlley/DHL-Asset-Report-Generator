@@ -1,11 +1,12 @@
 import { useState, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Link } from 'react-router-dom'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { useDropzone } from 'react-dropzone'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { sitesApi, auditsApi } from '../services/api'
+import ReportSection from '../components/audit/ReportSection'
 import {
   Upload,
   FileSpreadsheet,
@@ -14,6 +15,7 @@ import {
   Loader2,
   X,
   Download,
+  FileText,
 } from 'lucide-react'
 
 const uploadSchema = z.object({
@@ -24,14 +26,20 @@ const uploadSchema = z.object({
 
 type UploadForm = z.infer<typeof uploadSchema>
 
+interface UploadSuccess {
+  auditId: string
+  siteCode: string
+  siteName: string
+  message: string
+  warnings?: { row: number; field: string; message: string }[]
+}
+
 export default function UploadPage() {
   const [file, setFile] = useState<File | null>(null)
-  const [uploadResult, setUploadResult] = useState<{
-    status: string
-    audit_id?: string | null
-    message?: string
+  const [uploadSuccess, setUploadSuccess] = useState<UploadSuccess | null>(null)
+  const [uploadError, setUploadError] = useState<{
+    message: string
     validation_errors?: { row: number; field: string; message: string }[]
-    warnings?: { row: number; field: string; message: string }[]
   } | null>(null)
   const navigate = useNavigate()
 
@@ -54,36 +62,40 @@ export default function UploadPage() {
   const uploadMutation = useMutation({
     mutationFn: (data: UploadForm & { file: File }) =>
       auditsApi.upload(data.file, data.site_code, data.audit_date, data.auditor_name),
-    onSuccess: (result) => {
-      setUploadResult(result)
+    onSuccess: (result, variables) => {
       if (result.status === 'success' && result.audit_id) {
-        // Navigate to audit detail after brief delay
-        setTimeout(() => {
-          navigate(`/audits/${result.audit_id}`)
-        }, 2000)
+        const site = sites?.find(s => s.site_code === variables.site_code)
+        setUploadSuccess({
+          auditId: result.audit_id,
+          siteCode: variables.site_code,
+          siteName: site?.site_name || variables.site_code,
+          message: result.message || 'Audit uploaded successfully',
+          warnings: result.warnings,
+        })
+        setUploadError(null)
       }
     },
     onError: (error: { response?: { data?: { detail?: string | { message?: string; errors?: { row: number; field: string; message: string }[] } } } }) => {
       const detail = error.response?.data?.detail
       if (typeof detail === 'object' && detail.errors) {
-        setUploadResult({
-          status: 'error',
+        setUploadError({
           message: detail.message || 'Validation failed',
           validation_errors: detail.errors,
         })
       } else {
-        setUploadResult({
-          status: 'error',
+        setUploadError({
           message: typeof detail === 'string' ? detail : 'Upload failed. Please try again.',
         })
       }
+      setUploadSuccess(null)
     },
   })
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     if (acceptedFiles.length > 0) {
       setFile(acceptedFiles[0])
-      setUploadResult(null)
+      setUploadSuccess(null)
+      setUploadError(null)
     }
   }, [])
 
@@ -106,7 +118,14 @@ export default function UploadPage() {
 
   const removeFile = () => {
     setFile(null)
-    setUploadResult(null)
+    setUploadSuccess(null)
+    setUploadError(null)
+  }
+
+  const handleUploadAnother = () => {
+    setFile(null)
+    setUploadSuccess(null)
+    setUploadError(null)
   }
 
   return (
@@ -129,40 +148,64 @@ export default function UploadPage() {
         </a>
       </div>
 
-      {/* Success Message */}
-      {uploadResult?.status === 'success' && (
-        <div className="card p-6 border-green-200 bg-green-50">
-          <div className="flex items-start">
-            <CheckCircle className="w-6 h-6 text-green-500 flex-shrink-0" />
-            <div className="ml-3">
-              <h3 className="text-lg font-medium text-green-800">
-                Audit Uploaded Successfully!
-              </h3>
-              <p className="mt-1 text-sm text-green-700">
-                {uploadResult.message}
-              </p>
-              {uploadResult.warnings && uploadResult.warnings.length > 0 && (
-                <div className="mt-3">
-                  <p className="text-sm font-medium text-yellow-700">
-                    Warnings ({uploadResult.warnings.length}):
+      {/* Success View with Report Actions */}
+      {uploadSuccess && (
+        <div className="space-y-6">
+          <div className="card p-6 border-green-200 bg-green-50">
+            <div className="flex items-start justify-between">
+              <div className="flex items-start">
+                <CheckCircle className="w-6 h-6 text-green-500 flex-shrink-0" />
+                <div className="ml-3">
+                  <h3 className="text-lg font-medium text-green-800">
+                    Audit Uploaded Successfully!
+                  </h3>
+                  <p className="mt-1 text-sm text-green-700">
+                    {uploadSuccess.message}
                   </p>
-                  <ul className="mt-1 text-sm text-yellow-700 list-disc list-inside">
-                    {uploadResult.warnings.slice(0, 5).map((w, i) => (
-                      <li key={i}>{w.message}</li>
-                    ))}
-                  </ul>
+                  <p className="mt-1 text-sm text-green-600">
+                    {uploadSuccess.siteCode} - {uploadSuccess.siteName}
+                  </p>
+                  {uploadSuccess.warnings && uploadSuccess.warnings.length > 0 && (
+                    <div className="mt-3">
+                      <p className="text-sm font-medium text-yellow-700">
+                        Warnings ({uploadSuccess.warnings.length}):
+                      </p>
+                      <ul className="mt-1 text-sm text-yellow-700 list-disc list-inside">
+                        {uploadSuccess.warnings.slice(0, 5).map((w, i) => (
+                          <li key={i}>{w.message}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                 </div>
-              )}
-              <p className="mt-3 text-sm text-green-700">
-                Redirecting to audit results...
-              </p>
+              </div>
+              <Link
+                to={`/audits/${uploadSuccess.auditId}`}
+                className="btn-secondary"
+              >
+                <FileText className="w-4 h-4 mr-2" />
+                View Audit Details
+              </Link>
             </div>
+          </div>
+
+          {/* Report Actions */}
+          <ReportSection siteCode={uploadSuccess.siteCode} auditId={uploadSuccess.auditId} />
+
+          {/* Upload Another */}
+          <div className="text-center">
+            <button
+              onClick={handleUploadAnother}
+              className="text-sm text-blue-600 hover:text-blue-800"
+            >
+              Upload another audit
+            </button>
           </div>
         </div>
       )}
 
       {/* Error Message */}
-      {uploadResult?.status === 'error' && (
+      {uploadError && (
         <div className="card p-6 border-red-200 bg-red-50">
           <div className="flex items-start">
             <AlertCircle className="w-6 h-6 text-red-500 flex-shrink-0" />
@@ -171,15 +214,15 @@ export default function UploadPage() {
                 Upload Failed
               </h3>
               <p className="mt-1 text-sm text-red-700">
-                {uploadResult.message}
+                {uploadError.message}
               </p>
-              {uploadResult.validation_errors && uploadResult.validation_errors.length > 0 && (
+              {uploadError.validation_errors && uploadError.validation_errors.length > 0 && (
                 <div className="mt-3">
                   <p className="text-sm font-medium text-red-700">
-                    Validation Errors ({uploadResult.validation_errors.length}):
+                    Validation Errors ({uploadError.validation_errors.length}):
                   </p>
                   <ul className="mt-2 space-y-1">
-                    {uploadResult.validation_errors.slice(0, 10).map((err, i) => (
+                    {uploadError.validation_errors.slice(0, 10).map((err, i) => (
                       <li
                         key={i}
                         className="text-sm text-red-700 bg-red-100 px-2 py-1 rounded"
@@ -187,9 +230,9 @@ export default function UploadPage() {
                         Row {err.row}: {err.field} - {err.message}
                       </li>
                     ))}
-                    {uploadResult.validation_errors.length > 10 && (
+                    {uploadError.validation_errors.length > 10 && (
                       <li className="text-sm text-red-600 italic">
-                        ...and {uploadResult.validation_errors.length - 10} more errors
+                        ...and {uploadError.validation_errors.length - 10} more errors
                       </li>
                     )}
                   </ul>
@@ -201,7 +244,7 @@ export default function UploadPage() {
       )}
 
       {/* Upload Form */}
-      {uploadResult?.status !== 'success' && (
+      {!uploadSuccess && (
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
           {/* Site Information */}
           <div className="card p-6">

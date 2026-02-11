@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { scanAuditApi, sitesApi } from '../services/api'
+import ReportSection from '../components/audit/ReportSection'
 import {
   Scan,
   CheckCircle,
@@ -21,6 +22,15 @@ import {
 
 type TabType = 'scan' | 'progress' | 'scanned' | 'missing'
 
+interface CompletedSession {
+  sessionId: string
+  siteCode: string
+  siteName: string
+  foundCount: number
+  expectedCount: number
+  progressPercent: number
+}
+
 export default function ScanAuditPage() {
   const [selectedSite, setSelectedSite] = useState<string>('')
   const [sessionId, setSessionId] = useState<string | null>(null)
@@ -28,6 +38,7 @@ export default function ScanAuditPage() {
   const [lookupResult, setLookupResult] = useState<Record<string, unknown> | null>(null)
   const [activeTab, setActiveTab] = useState<TabType>('scan')
   const [showHistory, setShowHistory] = useState(false)
+  const [completedSession, setCompletedSession] = useState<CompletedSession | null>(null)
   const scanInputRef = useRef<HTMLInputElement>(null)
 
   const { data: sites } = useQuery({
@@ -116,8 +127,18 @@ export default function ScanAuditPage() {
   })
 
   const endSessionMutation = useMutation({
-    mutationFn: (sessionId: string) => scanAuditApi.endSession(sessionId),
-    onSuccess: () => {
+    mutationFn: (id: string) => scanAuditApi.endSession(id),
+    onSuccess: (_result, id) => {
+      // Capture completed session info for report generation
+      const site = sites?.find(s => s.site_code === selectedSite)
+      setCompletedSession({
+        sessionId: id,
+        siteCode: selectedSite,
+        siteName: site?.site_name || selectedSite,
+        foundCount: stats?.found_count || 0,
+        expectedCount: stats?.expected_count || 0,
+        progressPercent: stats?.progress_percent || 0,
+      })
       setSessionId(null)
       setLookupResult(null)
       refetchSession()
@@ -725,8 +746,55 @@ export default function ScanAuditPage() {
         </>
       )}
 
+      {/* Completed Session Summary */}
+      {!sessionId && completedSession && (
+        <div className="space-y-6">
+          <div className="card p-6">
+            <div className="flex items-center mb-4">
+              <CheckCircle className="w-8 h-8 text-green-500 mr-3" />
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">
+                  Scan Session Completed
+                </h3>
+                <p className="text-sm text-gray-500">
+                  {completedSession.siteCode} - {completedSession.siteName}
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-4 p-4 bg-gray-50 rounded-lg">
+              <div className="text-center">
+                <p className="text-2xl font-bold text-green-600">{completedSession.foundCount}</p>
+                <p className="text-sm text-gray-500">Assets Found</p>
+              </div>
+              <div className="text-center">
+                <p className="text-2xl font-bold text-gray-900">{completedSession.expectedCount}</p>
+                <p className="text-sm text-gray-500">Expected</p>
+              </div>
+              <div className="text-center">
+                <p className="text-2xl font-bold text-blue-600">{completedSession.progressPercent}%</p>
+                <p className="text-sm text-gray-500">Completion</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Report Actions */}
+          <ReportSection siteCode={completedSession.siteCode} />
+
+          {/* Start New Session */}
+          <div className="text-center">
+            <button
+              onClick={() => setCompletedSession(null)}
+              className="text-sm text-blue-600 hover:text-blue-800"
+            >
+              Start a new scan session
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* No Session Message */}
-      {!sessionId && selectedSite && (
+      {!sessionId && !completedSession && selectedSite && (
         <div className="card p-12 text-center">
           <Scan className="w-16 h-16 mx-auto text-gray-300" />
           <h3 className="mt-4 text-lg font-medium text-gray-900">No Active Session</h3>

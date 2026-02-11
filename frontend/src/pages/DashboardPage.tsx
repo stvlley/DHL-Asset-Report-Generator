@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { klsDashboardApi, sitesApi, reportsApi } from '../services/api'
-import type { KLSDashboardKPIs, AssetInventoryByType } from '../types'
+import { klsDashboardApi, sitesApi, auditsApi, assetManagementApi } from '../services/api'
+import type { KLSDashboardKPIs, AssetInventoryByType, Asset } from '../types'
 import {
   Package,
   FileSpreadsheet,
@@ -10,13 +10,16 @@ import {
   WifiOff,
   AlertTriangle,
   Calendar,
-  Mail,
+  Building2,
+  FileText,
   Download,
   ChevronDown,
   ArrowUpRight,
   ArrowDownRight,
   Clock,
   CheckCircle2,
+  Search,
+  Filter,
 } from 'lucide-react'
 
 export default function DashboardPage() {
@@ -42,25 +45,21 @@ export default function DashboardPage() {
     enabled: !selectedSite,
   })
 
-  const handleGenerateReport = async () => {
-    if (!selectedSite) return
-    try {
-      const result = await reportsApi.generate(selectedSite)
-      alert(`Report generated: ${result.message}`)
-    } catch (error) {
-      alert('Failed to generate report')
-    }
-  }
+  // Fetch audits for count
+  const { data: audits } = useQuery({
+    queryKey: ['audits'],
+    queryFn: () => auditsApi.list(),
+  })
 
-  const handleSendReport = async () => {
-    if (!selectedSite) return
-    try {
-      const result = await reportsApi.send(selectedSite)
-      alert(result.message)
-    } catch (error) {
-      alert('Failed to send report')
-    }
-  }
+  // Fetch assets when site is selected
+  const { data: assetsData } = useQuery({
+    queryKey: ['assets', selectedSite],
+    queryFn: () => assetManagementApi.list({ site_code: selectedSite, limit: 500 }),
+    enabled: !!selectedSite,
+  })
+
+  const totalAudits = audits?.length ?? 0
+  const siteAudits = selectedSite ? audits?.filter(a => a.site_code === selectedSite).length ?? 0 : totalAudits
 
   const isLoading = selectedSite ? klsLoading : portfolioLoading
 
@@ -100,41 +99,59 @@ export default function DashboardPage() {
             </select>
             <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
           </div>
-
-          {/* Action Buttons */}
-          {selectedSite && (
-            <>
-              <button
-                onClick={handleGenerateReport}
-                className="flex items-center gap-2 px-4 py-2 bg-dhl-yellow text-gray-900 rounded-lg text-sm font-medium hover:bg-yellow-400 transition-colors"
-              >
-                <Download className="w-4 h-4" />
-                Generate Report
-              </button>
-              <button
-                onClick={handleSendReport}
-                className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200 transition-colors"
-              >
-                <Mail className="w-4 h-4" />
-                Send Report
-              </button>
-            </>
-          )}
         </div>
       </div>
 
       {/* Site-specific view */}
       {selectedSite && klsSummary ? (
-        <SiteKLSDashboard summary={klsSummary} />
+        <SiteKLSDashboard summary={klsSummary} assets={assetsData?.items ?? []} auditCount={siteAudits} />
       ) : portfolio ? (
-        <PortfolioKLSDashboard portfolio={portfolio} onSelectSite={setSelectedSite} />
+        <PortfolioKLSDashboard portfolio={portfolio} onSelectSite={setSelectedSite} totalAudits={totalAudits} />
       ) : null}
     </div>
   )
 }
 
 // Site-specific KLS Dashboard
-function SiteKLSDashboard({ summary }: { summary: KLSDashboardKPIs }) {
+function SiteKLSDashboard({ summary, assets, auditCount }: { summary: KLSDashboardKPIs; assets: Asset[]; auditCount: number }) {
+  const [assetSearch, setAssetSearch] = useState('')
+  const [assetTypeFilter, setAssetTypeFilter] = useState('')
+  const [conditionFilter, setConditionFilter] = useState('')
+
+  // Get unique asset types for filter
+  const assetTypes = [...new Set(assets.map(a => a.asset_type).filter(Boolean))]
+
+  // Filter assets
+  const filteredAssets = assets.filter(asset => {
+    const matchesSearch = !assetSearch ||
+      asset.serial_number?.toLowerCase().includes(assetSearch.toLowerCase()) ||
+      asset.model?.toLowerCase().includes(assetSearch.toLowerCase())
+    const matchesType = !assetTypeFilter || asset.asset_type === assetTypeFilter
+    const matchesCondition = !conditionFilter || asset.recorded_condition === conditionFilter
+    return matchesSearch && matchesType && matchesCondition
+  })
+
+  const handleExportAssets = () => {
+    // Simple CSV export
+    const headers = ['Serial Number', 'Type', 'Model', 'Condition', 'GL String', 'Cost/Month']
+    const rows = filteredAssets.map(a => [
+      a.serial_number,
+      a.asset_type,
+      a.model,
+      a.recorded_condition || '',
+      a.gl_string,
+      a.cost_per_month?.toFixed(2) || ''
+    ])
+    const csv = [headers, ...rows].map(row => row.join(',')).join('\n')
+    const blob = new Blob([csv], { type: 'text/csv' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${summary.site_code}_assets.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   return (
     <div className="space-y-6">
       {/* Site Info Banner */}
@@ -147,11 +164,11 @@ function SiteKLSDashboard({ summary }: { summary: KLSDashboardKPIs }) {
             <p className="text-sm text-gray-600">
               Audit Date: {summary.audit_date || 'No audit yet'} •
               Auditor: {summary.auditor || 'N/A'} •
-              Period: {summary.audit_period || 'N/A'}
+              Audits: {auditCount}
             </p>
           </div>
           <div className="text-right text-sm text-gray-500">
-            Report Generated: {new Date(summary.report_generated).toLocaleDateString()}
+            Assets: {assets.length}
           </div>
         </div>
       </div>
@@ -229,6 +246,103 @@ function SiteKLSDashboard({ summary }: { summary: KLSDashboardKPIs }) {
         </div>
       </div>
 
+      {/* Asset Details Table */}
+      <div className="card overflow-hidden">
+        <div className="px-4 py-3 bg-gray-50 border-b flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <h3 className="font-semibold text-gray-900">Asset Details</h3>
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Search..."
+                value={assetSearch}
+                onChange={(e) => setAssetSearch(e.target.value)}
+                className="pl-9 pr-3 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-dhl-yellow"
+              />
+            </div>
+            <select
+              value={assetTypeFilter}
+              onChange={(e) => setAssetTypeFilter(e.target.value)}
+              className="text-sm border border-gray-300 rounded-md px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-dhl-yellow"
+            >
+              <option value="">All Types</option>
+              {assetTypes.map(type => (
+                <option key={type} value={type}>{type}</option>
+              ))}
+            </select>
+            <select
+              value={conditionFilter}
+              onChange={(e) => setConditionFilter(e.target.value)}
+              className="text-sm border border-gray-300 rounded-md px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-dhl-yellow"
+            >
+              <option value="">All Conditions</option>
+              <option value="Good">Good</option>
+              <option value="Bad">Bad</option>
+              <option value="RMA">RMA</option>
+              <option value="Lost">Lost</option>
+            </select>
+            <button
+              onClick={handleExportAssets}
+              className="flex items-center gap-1 px-3 py-1.5 text-sm bg-dhl-yellow text-gray-900 rounded-md hover:bg-yellow-400"
+            >
+              <Download className="w-4 h-4" />
+              Export
+            </button>
+          </div>
+        </div>
+        <div className="overflow-x-auto max-h-96">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50 sticky top-0">
+              <tr>
+                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Serial</th>
+                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
+                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Model</th>
+                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Condition</th>
+                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">GL String</th>
+                <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Cost/Mo</th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {filteredAssets.slice(0, 100).map((asset) => (
+                <tr key={asset.asset_id} className="hover:bg-gray-50">
+                  <td className="px-4 py-2 text-sm font-mono text-gray-900">{asset.serial_number}</td>
+                  <td className="px-4 py-2 text-sm text-gray-600">{asset.asset_type}</td>
+                  <td className="px-4 py-2 text-sm text-gray-600">{asset.model}</td>
+                  <td className="px-4 py-2 text-sm">
+                    <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${
+                      asset.recorded_condition === 'Good' ? 'bg-green-100 text-green-800' :
+                      asset.recorded_condition === 'Bad' ? 'bg-red-100 text-red-800' :
+                      asset.recorded_condition === 'RMA' ? 'bg-yellow-100 text-yellow-800' :
+                      'bg-gray-100 text-gray-800'
+                    }`}>
+                      {asset.recorded_condition || 'Unknown'}
+                    </span>
+                  </td>
+                  <td className="px-4 py-2 text-sm text-gray-500 font-mono text-xs">{asset.gl_string}</td>
+                  <td className="px-4 py-2 text-sm text-right text-gray-600">
+                    {asset.cost_per_month ? `$${asset.cost_per_month.toFixed(2)}` : '-'}
+                  </td>
+                </tr>
+              ))}
+              {filteredAssets.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
+                    <Filter className="w-8 h-8 mx-auto mb-2 text-gray-300" />
+                    No assets found
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+          {filteredAssets.length > 100 && (
+            <div className="px-4 py-2 bg-gray-50 text-sm text-gray-500 text-center border-t">
+              Showing 100 of {filteredAssets.length} assets. Export for full list.
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* Workflow Status */}
       <WorkflowStatusCard workflow={summary.workflow} />
 
@@ -280,21 +394,37 @@ function SiteKLSDashboard({ summary }: { summary: KLSDashboardKPIs }) {
 // Portfolio view when no site selected
 function PortfolioKLSDashboard({
   portfolio,
-  onSelectSite
+  onSelectSite,
+  totalAudits
 }: {
   portfolio: { totals: { on_site_total: number; it_allocation_total: number; pbi_total: number; inactive_count: number; sites_count: number }; it_allocation_variance: number; pbi_variance: number; sites: KLSDashboardKPIs[] }
   onSelectSite: (code: string) => void
+  totalAudits: number
 }) {
   return (
     <div className="space-y-6">
       {/* Portfolio Totals */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
         <KPICard
-          title="Total On-Site"
+          title="Total Sites"
+          value={portfolio.totals.sites_count}
+          icon={<Building2 className="w-6 h-6" />}
+          color="blue"
+          subtitle="Managed sites"
+        />
+        <KPICard
+          title="Total Assets"
           value={portfolio.totals.on_site_total}
           icon={<Package className="w-6 h-6" />}
           color="blue"
-          subtitle={`Across ${portfolio.totals.sites_count} sites`}
+          subtitle="Across all sites"
+        />
+        <KPICard
+          title="Total Audits"
+          value={totalAudits}
+          icon={<FileText className="w-6 h-6" />}
+          color="green"
+          subtitle="Completed audits"
         />
         <KPICard
           title="IT Allocation Variance"
@@ -302,14 +432,6 @@ function PortfolioKLSDashboard({
           total={portfolio.totals.it_allocation_total}
           icon={<FileSpreadsheet className="w-6 h-6" />}
           color={portfolio.it_allocation_variance === 0 ? 'green' : 'yellow'}
-          isVariance
-        />
-        <KPICard
-          title="PBI/SOTI Variance"
-          value={portfolio.pbi_variance}
-          total={portfolio.totals.pbi_total}
-          icon={<Wifi className="w-6 h-6" />}
-          color={portfolio.pbi_variance === 0 ? 'green' : 'yellow'}
           isVariance
         />
         <KPICard
