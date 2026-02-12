@@ -1,8 +1,21 @@
-import { useState } from 'react'
+/**
+ * Asset Audit Dashboard with improved UX, charts, and actionable insights.
+ */
+import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { klsDashboardApi, sitesApi, auditsApi, assetManagementApi } from '../services/api'
+import { klsDashboardApi, sitesApi, auditsApi, assetManagementApi, dashboardApi } from '../services/api'
 import type { KLSDashboardKPIs, AssetInventoryByType, Asset } from '../types'
+import {
+  KPICard,
+  SectionCard,
+  SiteSummaryTable,
+  TrendLineChart,
+  VarianceDonutChart,
+  transformVarianceSummary,
+  AlertsPanel,
+  computeAlerts,
+} from '../components/dashboard'
 import {
   Package,
   FileSpreadsheet,
@@ -14,12 +27,13 @@ import {
   FileText,
   Download,
   ChevronDown,
-  ArrowUpRight,
-  ArrowDownRight,
+  ChevronLeft,
   Clock,
   CheckCircle2,
   Search,
   Filter,
+  TrendingUp,
+  PieChart,
 } from 'lucide-react'
 
 export default function DashboardPage() {
@@ -45,6 +59,18 @@ export default function DashboardPage() {
     enabled: !selectedSite,
   })
 
+  // Fetch trends data
+  const { data: trendsData } = useQuery({
+    queryKey: ['dashboard-trends', selectedSite || 'all'],
+    queryFn: () => dashboardApi.getTrends({ site_code: selectedSite || undefined, months: 6 }),
+  })
+
+  // Fetch legacy portfolio summary for overdue/high priority counts
+  const { data: legacyPortfolio } = useQuery({
+    queryKey: ['portfolio-summary'],
+    queryFn: () => dashboardApi.getPortfolioSummary(),
+  })
+
   // Fetch audits for count
   const { data: audits } = useQuery({
     queryKey: ['audits'],
@@ -61,6 +87,51 @@ export default function DashboardPage() {
   const totalAudits = audits?.length ?? 0
   const siteAudits = selectedSite ? audits?.filter(a => a.site_code === selectedSite).length ?? 0 : totalAudits
 
+  // Compute alerts
+  const alerts = useMemo(() => {
+    if (selectedSite && klsSummary) {
+      return computeAlerts({
+        workflow: klsSummary.workflow,
+        selectedSite,
+        sites: [{
+          site_code: klsSummary.site_code,
+          site_name: klsSummary.site_name,
+          it_allocation_variance: klsSummary.it_allocation_variance,
+          pbi_variance: klsSummary.pbi_variance,
+          inactive_device_count: klsSummary.inactive_device_count,
+        }],
+      })
+    }
+    if (!selectedSite && portfolio?.sites) {
+      return computeAlerts({
+        sites: portfolio.sites.map(s => ({
+          ...s,
+          days_since_audit: s.audit_date
+            ? Math.floor((Date.now() - new Date(s.audit_date).getTime()) / (1000 * 60 * 60 * 24))
+            : null,
+          is_overdue: s.audit_date
+            ? Math.floor((Date.now() - new Date(s.audit_date).getTime()) / (1000 * 60 * 60 * 24)) > 30
+            : true,
+        })),
+      })
+    }
+    return []
+  }, [selectedSite, klsSummary, portfolio])
+
+  // Compute variance chart data from latest audit summary
+  const varianceChartData = useMemo(() => {
+    if (selectedSite && klsSummary) {
+      // Use GL reconciliation data if available
+      return transformVarianceSummary({
+        correct: klsSummary.on_site_total - (klsSummary.it_allocation_variance < 0 ? Math.abs(klsSummary.it_allocation_variance) : 0),
+        missing: klsSummary.it_allocation_variance > 0 ? klsSummary.it_allocation_variance : 0,
+        misallocated: 0,
+        untracked: klsSummary.it_allocation_variance < 0 ? Math.abs(klsSummary.it_allocation_variance) : 0,
+      })
+    }
+    return []
+  }, [selectedSite, klsSummary])
+
   const isLoading = selectedSite ? klsLoading : portfolioLoading
 
   if (isLoading) {
@@ -75,11 +146,27 @@ export default function DashboardPage() {
     <div className="space-y-6">
       {/* Header with Site Selector */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Asset Audit Dashboard</h1>
-          <p className="text-sm text-gray-500 mt-1">
-            Monthly audit KPIs and variance tracking
-          </p>
+        <div className="flex items-center gap-3">
+          {selectedSite && (
+            <button
+              onClick={() => setSelectedSite('')}
+              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              title="Back to Portfolio"
+            >
+              <ChevronLeft className="w-5 h-5" />
+            </button>
+          )}
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">
+              {selectedSite ? `${klsSummary?.site_name || selectedSite}` : 'Asset Audit Dashboard'}
+            </h1>
+            <p className="text-sm text-gray-500 mt-1">
+              {selectedSite
+                ? `Site ${selectedSite} • ${siteAudits} audits completed`
+                : 'Portfolio overview and variance tracking'
+              }
+            </p>
+          </div>
         </div>
 
         <div className="flex items-center gap-3">
@@ -102,18 +189,45 @@ export default function DashboardPage() {
         </div>
       </div>
 
+      {/* Alerts Panel */}
+      {alerts.length > 0 && <AlertsPanel alerts={alerts} />}
+
       {/* Site-specific view */}
       {selectedSite && klsSummary ? (
-        <SiteKLSDashboard summary={klsSummary} assets={assetsData?.items ?? []} auditCount={siteAudits} />
-      ) : portfolio ? (
-        <PortfolioKLSDashboard portfolio={portfolio} onSelectSite={setSelectedSite} totalAudits={totalAudits} />
-      ) : null}
+        <SiteKLSDashboard
+          summary={klsSummary}
+          assets={assetsData?.items ?? []}
+          auditCount={siteAudits}
+          trends={trendsData?.trends ?? []}
+          varianceData={varianceChartData}
+        />
+      ) : (
+        <PortfolioKLSDashboard
+          portfolio={portfolio}
+          legacyPortfolio={legacyPortfolio}
+          onSelectSite={setSelectedSite}
+          totalAudits={totalAudits}
+          trends={trendsData?.trends ?? []}
+        />
+      )}
     </div>
   )
 }
 
 // Site-specific KLS Dashboard
-function SiteKLSDashboard({ summary, assets, auditCount }: { summary: KLSDashboardKPIs; assets: Asset[]; auditCount: number }) {
+function SiteKLSDashboard({
+  summary,
+  assets,
+  auditCount,
+  trends,
+  varianceData,
+}: {
+  summary: KLSDashboardKPIs
+  assets: Asset[]
+  auditCount: number
+  trends: Array<{ month: string; gl_accuracy_pct: number | null; potential_savings: number; total_assets: number }>
+  varianceData: Array<{ type: string; count: number }>
+}) {
   const [assetSearch, setAssetSearch] = useState('')
   const [assetTypeFilter, setAssetTypeFilter] = useState('')
   const [conditionFilter, setConditionFilter] = useState('')
@@ -132,7 +246,6 @@ function SiteKLSDashboard({ summary, assets, auditCount }: { summary: KLSDashboa
   })
 
   const handleExportAssets = () => {
-    // Simple CSV export
     const headers = ['Serial Number', 'Type', 'Model', 'Condition', 'GL String', 'Cost/Month']
     const rows = filteredAssets.map(a => [
       a.serial_number,
@@ -175,7 +288,6 @@ function SiteKLSDashboard({ summary, assets, auditCount }: { summary: KLSDashboa
 
       {/* 4 KPI Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* KPI 1: On-Site Total */}
         <KPICard
           title="On-Site Total"
           value={summary.on_site_total}
@@ -183,8 +295,6 @@ function SiteKLSDashboard({ summary, assets, auditCount }: { summary: KLSDashboa
           color="blue"
           subtitle={`Good: ${summary.good_count} | Bad: ${summary.bad_count} | RMA: ${summary.rma_count}`}
         />
-
-        {/* KPI 2: IT Allocation Variance */}
         <KPICard
           title="IT Allocation Variance"
           value={summary.it_allocation_variance}
@@ -194,8 +304,6 @@ function SiteKLSDashboard({ summary, assets, auditCount }: { summary: KLSDashboa
           isVariance
           comment={summary.it_allocation_variance_comment}
         />
-
-        {/* KPI 3: PBI/SOTI Variance */}
         <KPICard
           title="PBI/SOTI Variance"
           value={summary.pbi_variance}
@@ -205,8 +313,6 @@ function SiteKLSDashboard({ summary, assets, auditCount }: { summary: KLSDashboa
           isVariance
           comment={summary.pbi_variance_comment}
         />
-
-        {/* KPI 4: Inactive Devices */}
         <KPICard
           title={`${summary.inactive_threshold_days}-Day Inactive`}
           value={summary.inactive_device_count}
@@ -216,11 +322,37 @@ function SiteKLSDashboard({ summary, assets, auditCount }: { summary: KLSDashboa
         />
       </div>
 
-      {/* Asset Inventory by Type */}
-      <div className="card overflow-hidden">
-        <div className="px-4 py-3 bg-dhl-yellow/20 border-b border-dhl-yellow">
-          <h3 className="font-semibold text-gray-900">Asset Inventory by Type</h3>
+      {/* Charts Row */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Trend Chart */}
+        <div className="card p-4">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+              <TrendingUp className="w-5 h-5 text-gray-500" />
+              GL Accuracy Trend
+            </h3>
+          </div>
+          <TrendLineChart data={trends} height={220} showSavings />
         </div>
+
+        {/* Variance Chart */}
+        <div className="card p-4">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+              <PieChart className="w-5 h-5 text-gray-500" />
+              Variance Breakdown
+            </h3>
+          </div>
+          <VarianceDonutChart data={varianceData} height={220} />
+        </div>
+      </div>
+
+      {/* Asset Inventory by Type */}
+      <SectionCard
+        title="Asset Inventory by Type"
+        icon={<Package className="w-5 h-5 text-gray-500" />}
+        storageKey="inventory-table"
+      >
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
@@ -244,52 +376,55 @@ function SiteKLSDashboard({ summary, assets, auditCount }: { summary: KLSDashboa
             </tbody>
           </table>
         </div>
-      </div>
+      </SectionCard>
 
       {/* Asset Details Table */}
-      <div className="card overflow-hidden">
-        <div className="px-4 py-3 bg-gray-50 border-b flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <h3 className="font-semibold text-gray-900">Asset Details</h3>
-          <div className="flex items-center gap-2 flex-wrap">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <input
-                type="text"
-                placeholder="Search..."
-                value={assetSearch}
-                onChange={(e) => setAssetSearch(e.target.value)}
-                className="pl-9 pr-3 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-dhl-yellow"
-              />
-            </div>
-            <select
-              value={assetTypeFilter}
-              onChange={(e) => setAssetTypeFilter(e.target.value)}
-              className="text-sm border border-gray-300 rounded-md px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-dhl-yellow"
-            >
-              <option value="">All Types</option>
-              {assetTypes.map(type => (
-                <option key={type} value={type}>{type}</option>
-              ))}
-            </select>
-            <select
-              value={conditionFilter}
-              onChange={(e) => setConditionFilter(e.target.value)}
-              className="text-sm border border-gray-300 rounded-md px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-dhl-yellow"
-            >
-              <option value="">All Conditions</option>
-              <option value="Good">Good</option>
-              <option value="Bad">Bad</option>
-              <option value="RMA">RMA</option>
-              <option value="Lost">Lost</option>
-            </select>
-            <button
-              onClick={handleExportAssets}
-              className="flex items-center gap-1 px-3 py-1.5 text-sm bg-dhl-yellow text-gray-900 rounded-md hover:bg-yellow-400"
-            >
-              <Download className="w-4 h-4" />
-              Export
-            </button>
+      <SectionCard
+        title="Asset Details"
+        icon={<FileText className="w-5 h-5 text-gray-500" />}
+        storageKey="asset-details"
+        action={
+          <button
+            onClick={handleExportAssets}
+            className="flex items-center gap-1 px-3 py-1.5 text-sm bg-dhl-yellow text-gray-900 rounded-md hover:bg-yellow-400"
+          >
+            <Download className="w-4 h-4" />
+            Export
+          </button>
+        }
+      >
+        <div className="px-4 py-3 border-b flex flex-col sm:flex-row sm:items-center gap-3">
+          <div className="relative flex-1 max-w-xs">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Search..."
+              value={assetSearch}
+              onChange={(e) => setAssetSearch(e.target.value)}
+              className="w-full pl-9 pr-3 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-dhl-yellow"
+            />
           </div>
+          <select
+            value={assetTypeFilter}
+            onChange={(e) => setAssetTypeFilter(e.target.value)}
+            className="text-sm border border-gray-300 rounded-md px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-dhl-yellow"
+          >
+            <option value="">All Types</option>
+            {assetTypes.map(type => (
+              <option key={type} value={type}>{type}</option>
+            ))}
+          </select>
+          <select
+            value={conditionFilter}
+            onChange={(e) => setConditionFilter(e.target.value)}
+            className="text-sm border border-gray-300 rounded-md px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-dhl-yellow"
+          >
+            <option value="">All Conditions</option>
+            <option value="Good">Good</option>
+            <option value="Bad">Bad</option>
+            <option value="RMA">RMA</option>
+            <option value="Lost">Lost</option>
+          </select>
         </div>
         <div className="overflow-x-auto max-h-96">
           <table className="min-w-full divide-y divide-gray-200">
@@ -341,7 +476,7 @@ function SiteKLSDashboard({ summary, assets, auditCount }: { summary: KLSDashboa
             </div>
           )}
         </div>
-      </div>
+      </SectionCard>
 
       {/* Workflow Status */}
       <WorkflowStatusCard workflow={summary.workflow} />
@@ -394,27 +529,55 @@ function SiteKLSDashboard({ summary, assets, auditCount }: { summary: KLSDashboa
 // Portfolio view when no site selected
 function PortfolioKLSDashboard({
   portfolio,
+  legacyPortfolio,
   onSelectSite,
-  totalAudits
+  totalAudits,
+  trends,
 }: {
-  portfolio: { totals: { on_site_total: number; it_allocation_total: number; pbi_total: number; inactive_count: number; sites_count: number }; it_allocation_variance: number; pbi_variance: number; sites: KLSDashboardKPIs[] }
+  portfolio?: { totals: { on_site_total: number; it_allocation_total: number; pbi_total: number; inactive_count: number; sites_count: number }; it_allocation_variance: number; pbi_variance: number; sites: KLSDashboardKPIs[] } | null
+  legacyPortfolio?: { sites_with_overdue_audits: number; high_priority_items: number } | null
   onSelectSite: (code: string) => void
   totalAudits: number
+  trends: Array<{ month: string; gl_accuracy_pct: number | null; potential_savings: number; total_assets: number }>
 }) {
+  // Default values when portfolio is not yet loaded
+  const totals = portfolio?.totals ?? { on_site_total: 0, it_allocation_total: 0, pbi_total: 0, inactive_count: 0, sites_count: 0 }
+  const sites = portfolio?.sites ?? []
+
+  // Compute variance data from all sites
+  const portfolioVarianceData = useMemo(() => {
+    const varianceTotals = {
+      correct: 0,
+      missing: 0,
+      misallocated: 0,
+      untracked: 0,
+    }
+    sites.forEach(site => {
+      const variance = site.it_allocation_variance
+      if (variance > 0) {
+        varianceTotals.missing += variance
+      } else if (variance < 0) {
+        varianceTotals.untracked += Math.abs(variance)
+      }
+      varianceTotals.correct += site.on_site_total - Math.abs(variance)
+    })
+    return transformVarianceSummary(varianceTotals)
+  }, [sites])
+
   return (
     <div className="space-y-6">
-      {/* Portfolio Totals */}
+      {/* Portfolio KPIs */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
         <KPICard
           title="Total Sites"
-          value={portfolio.totals.sites_count}
+          value={totals.sites_count}
           icon={<Building2 className="w-6 h-6" />}
           color="blue"
           subtitle="Managed sites"
         />
         <KPICard
           title="Total Assets"
-          value={portfolio.totals.on_site_total}
+          value={totals.on_site_total}
           icon={<Package className="w-6 h-6" />}
           color="blue"
           subtitle="Across all sites"
@@ -427,146 +590,48 @@ function PortfolioKLSDashboard({
           subtitle="Completed audits"
         />
         <KPICard
-          title="IT Allocation Variance"
-          value={portfolio.it_allocation_variance}
-          total={portfolio.totals.it_allocation_total}
-          icon={<FileSpreadsheet className="w-6 h-6" />}
-          color={portfolio.it_allocation_variance === 0 ? 'green' : 'yellow'}
-          isVariance
+          title="Overdue Audits"
+          value={legacyPortfolio?.sites_with_overdue_audits ?? 0}
+          icon={<AlertTriangle className="w-6 h-6" />}
+          color={legacyPortfolio?.sites_with_overdue_audits ? 'red' : 'green'}
+          subtitle="Sites needing audit"
         />
         <KPICard
           title="Inactive Devices"
-          value={portfolio.totals.inactive_count}
+          value={totals.inactive_count}
           icon={<WifiOff className="w-6 h-6" />}
-          color={portfolio.totals.inactive_count === 0 ? 'green' : 'red'}
+          color={totals.inactive_count === 0 ? 'green' : 'red'}
+          subtitle="Not connected"
         />
       </div>
 
-      {/* Sites Table */}
-      <div className="card overflow-hidden">
-        <div className="px-4 py-3 border-b border-gray-200">
-          <h3 className="font-semibold text-gray-900">Site Summary</h3>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Site</th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">On-Site</th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">IT Alloc</th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">IT Var</th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">PBI</th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">PBI Var</th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Inactive</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Last Audit</th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {portfolio.sites.map((site) => (
-                <tr
-                  key={site.site_code}
-                  className="hover:bg-gray-50 cursor-pointer"
-                  onClick={() => onSelectSite(site.site_code)}
-                >
-                  <td className="px-4 py-3">
-                    <div>
-                      <p className="font-medium text-gray-900">{site.site_code}</p>
-                      <p className="text-xs text-gray-500">{site.site_name}</p>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 text-right font-medium">{site.on_site_total}</td>
-                  <td className="px-4 py-3 text-right text-gray-600">{site.it_allocation_total}</td>
-                  <td className="px-4 py-3 text-right">
-                    <VarianceBadge value={site.it_allocation_variance} />
-                  </td>
-                  <td className="px-4 py-3 text-right text-gray-600">{site.pbi_total}</td>
-                  <td className="px-4 py-3 text-right">
-                    <VarianceBadge value={site.pbi_variance} />
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    {site.inactive_device_count > 0 ? (
-                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">
-                        {site.inactive_device_count}
-                      </span>
-                    ) : (
-                      <span className="text-gray-400">0</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-sm text-gray-500">
-                    {site.audit_date || 'Never'}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// KPI Card Component
-function KPICard({
-  title,
-  value,
-  total,
-  icon,
-  color,
-  isVariance,
-  subtitle,
-  comment,
-}: {
-  title: string
-  value: number
-  total?: number
-  icon: React.ReactNode
-  color: 'blue' | 'green' | 'yellow' | 'red'
-  isVariance?: boolean
-  subtitle?: string
-  comment?: string | null
-}) {
-  const colorClasses = {
-    blue: 'bg-blue-50 text-blue-600',
-    green: 'bg-green-50 text-green-600',
-    yellow: 'bg-yellow-50 text-yellow-600',
-    red: 'bg-red-50 text-red-600',
-  }
-
-  return (
-    <div className="card p-4">
-      <div className="flex items-start justify-between">
-        <div className={`p-2 rounded-lg ${colorClasses[color]}`}>
-          {icon}
-        </div>
-        {isVariance && (
-          <div className="text-right">
-            <p className="text-xs text-gray-500">Total</p>
-            <p className="text-sm font-medium text-gray-700">{total}</p>
+      {/* Charts Row */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Trend Chart */}
+        <div className="card p-4">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+              <TrendingUp className="w-5 h-5 text-gray-500" />
+              Portfolio GL Accuracy Trend
+            </h3>
           </div>
-        )}
-      </div>
-      <div className="mt-3">
-        <p className="text-sm text-gray-500">{title}</p>
-        <div className="flex items-center gap-2">
-          <p className="text-2xl font-bold text-gray-900">
-            {isVariance && value > 0 && '+'}
-            {value}
-          </p>
-          {isVariance && value !== 0 && (
-            value > 0 ? (
-              <ArrowUpRight className="w-5 h-5 text-yellow-500" />
-            ) : (
-              <ArrowDownRight className="w-5 h-5 text-yellow-500" />
-            )
-          )}
+          <TrendLineChart data={trends} height={220} showSavings />
         </div>
-        {subtitle && (
-          <p className="text-xs text-gray-500 mt-1">{subtitle}</p>
-        )}
-        {comment && (
-          <p className="text-xs text-gray-600 mt-2 italic">{comment}</p>
-        )}
+
+        {/* Variance Chart */}
+        <div className="card p-4">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+              <PieChart className="w-5 h-5 text-gray-500" />
+              Portfolio Variance Distribution
+            </h3>
+          </div>
+          <VarianceDonutChart data={portfolioVarianceData} height={220} />
+        </div>
       </div>
+
+      {/* Sites Table with Sorting and Quick Filters */}
+      <SiteSummaryTable sites={sites} onSelectSite={onSelectSite} />
     </div>
   )
 }

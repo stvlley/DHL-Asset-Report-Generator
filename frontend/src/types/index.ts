@@ -448,3 +448,14 @@ export interface ReportRecipients {
   report_recipients: string | null
   all_recipients: string[]
 }
+
+// Dashboard Alerts
+export interface DashboardAlert {
+  id: string
+  type: 'overdue_audit' | 'high_variance' | 'inactive_devices' | 'workflow_deadline'
+  severity: 'critical' | 'warning' | 'info'
+  title: string
+  description: string
+  siteCode?: string
+  actionUrl?: string
+}
